@@ -1,0 +1,285 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "User profile in Fortuna",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Authentication User ID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the user profile was created"
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction (income or outcome)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Document or client-side transaction ID"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["entrada", "saida"],
+          "description": "Transaction type"
+        },
+        "value": {
+          "type": "number",
+          "description": "The amount in BRL"
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "Date of the transaction in YYYY-MM-DD"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the transaction"
+        },
+        "bank": {
+          "type": "string",
+          "description": "Bank account used"
+        },
+        "method": {
+          "type": "string",
+          "description": "Payment method"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the transaction"
+        },
+        "essential": {
+          "type": "boolean",
+          "description": "Whether this transaction is an essential expense/income"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pago", "pendente", "atrasado", "futuro"],
+          "description": "Payment or receipt status"
+        },
+        "recurring": {
+          "type": "boolean",
+          "description": "Active recurring subscription or repeating transaction"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner userId"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-side creation timestamp"
+        }
+      },
+      "required": ["id", "type", "value", "date", "category", "bank", "method", "description", "essential", "status", "recurring", "userId"]
+    },
+    "budget": {
+      "title": "Budget",
+      "description": "Budget limit for a specific category",
+      "type": "object",
+      "properties": {
+        "categoryId": {
+          "type": "string",
+          "description": "Identifier of the category"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Limit value allowed for this category"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner userId"
+        }
+      },
+      "required": ["categoryId", "limit", "userId"]
+    },
+    "investment": {
+      "title": "Investment",
+      "description": "Investment detail",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the investment asset"
+        },
+        "name": {
+          "type": "string",
+          "description": "Investment name (e.g. CDB, Ações)"
+        },
+        "value": {
+          "type": "number",
+          "description": "Total BRL amount invested in this asset"
+        },
+        "type": {
+          "type": "string",
+          "description": "Investment category (e.g. Renda Fixa, Ações, FIIs)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner userId"
+        }
+      },
+      "required": ["id", "name", "value", "type", "userId"]
+    },
+    "goal": {
+      "title": "Goal",
+      "description": "Financial goal details",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the goal"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the goal"
+        },
+        "target": {
+          "type": "number",
+          "description": "Target amount to be saved"
+        },
+        "current": {
+          "type": "number",
+          "description": "Current saved amount"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date",
+          "description": "Target deadline date in YYYY-MM-DD"
+        },
+        "category": {
+          "type": "string",
+          "description": "Category identifier for the goal"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner userId"
+        }
+      },
+      "required": ["id", "title", "target", "current", "deadline", "category"]
+    },
+    "vault": {
+      "title": "Vault",
+      "description": "Cofre para guardar dinheiro",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the vault"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the vault"
+        },
+        "targetValue": {
+          "type": "number",
+          "description": "Optional target amount"
+        },
+        "currentValue": {
+          "type": "number",
+          "description": "Current saved amount"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner userId"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["id", "name", "targetValue", "currentValue", "userId"]
+    },
+    "recorrente": {
+      "title": "Recorrente",
+      "description": "Despesas recorrentes mensais",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the recurring expense"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the recurring expense"
+        },
+        "value": {
+          "type": "number",
+          "description": "Value of the expense in BRL"
+        },
+        "dueDate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31,
+          "description": "Due day of the month"
+        },
+        "category": {
+          "type": "string",
+          "description": "Expense category"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ativo", "pausado"],
+          "description": "Status of the recurring expense"
+        },
+        "bank": {
+          "type": "string",
+          "description": "Associated bank"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner userId"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["id", "name", "value", "dueDate", "category", "status", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Fortuna User Profile documents"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": "transaction",
+      "description": "Per-user list of financial transactions"
+    },
+    "/users/{userId}/budgets/{categoryId}": {
+      "schema": "budget",
+      "description": "Per-user limits of category expenses"
+    },
+    "/users/{userId}/investments/{investmentId}": {
+      "schema": "investment",
+      "description": "Per-user investment asset records"
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": "goal",
+      "description": "Per-user financial goal records"
+    },
+    "/users/{userId}/vaults/{vaultId}": {
+      "schema": "vault",
+      "description": "Per-user vaults/cofres records"
+    },
+    "/users/{userId}/recurrentes/{recorrenteId}": {
+      "schema": "recorrente",
+      "description": "Per-user list of monthly recurring expenses"
+    }
+  }
+}

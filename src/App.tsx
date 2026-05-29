@@ -1,0 +1,3910 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend 
+} from 'recharts';
+import { 
+  Plus, 
+  Minus, 
+  LayoutDashboard, 
+  List, 
+  Menu, 
+  Calendar, 
+  TrendingUp, 
+  AlertCircle, 
+  CheckCircle2, 
+  ArrowUpCircle, 
+  ArrowDownCircle, 
+  Filter,
+  Wallet,
+  PieChart as PieChartIcon,
+  Building2,
+  Bookmark,
+  Target,
+  Sun,
+  Moon,
+  ChevronLeft,
+  ChevronRight,
+  LogIn,
+  LogOut,
+  Shield,
+  Trash2,
+  Info,
+  Tag,
+  Pencil,
+  Utensils,
+  Car,
+  Sparkles,
+  Activity,
+  Gift,
+  Home,
+  Tv,
+  Briefcase,
+  HelpCircle,
+  Trophy,
+  Lock,
+  Repeat,
+  RefreshCw,
+  Search,
+  X,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  format, 
+  startOfMonth, 
+  endOfMonth, 
+  startOfWeek, 
+  endOfWeek, 
+  eachDayOfInterval, 
+  isSameMonth, 
+  isSameDay, 
+  addMonths, 
+  subMonths,
+  parseISO
+} from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+import { auth, db, googleProvider, OperationType, handleFirestoreError } from './firebase';
+import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
+import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import Metas from './components/Metas';
+import Cofre, { Vault } from './components/Cofre';
+import Recorrentes, { Recorrente } from './components/Recorrentes';
+
+const CATEGORIES = [
+  { id: 'alimentacao', name: 'Alimentação', color: '#10b981' },
+  { id: 'transporte', name: 'Transporte', color: '#3b82f6' },
+  { id: 'lazer', name: 'Lazer', color: '#f59e0b' },
+  { id: 'saude', name: 'Saúde', color: '#ef4444' },
+  { id: 'presentes', name: 'Presentes', color: '#ec4899' },
+  { id: 'moradia', name: 'Moradia', color: '#8b5cf6' },
+  { id: 'assinaturas', name: 'Assinaturas', color: '#06b6d4' },
+  { id: 'outros', name: 'Outros', color: '#64748b' },
+];
+
+const BANKS = ['Nubank', 'Itaú', 'Inter', 'Bradesco', 'Santander', 'Dinheiro'];
+
+const formatDateDisplay = (dateStr: string) => {
+  if (!dateStr) return '';
+  try {
+    const parsed = parseISO(dateStr);
+    const formatted = format(parsed, "d MMMM", { locale: ptBR });
+    const parts = formatted.split(' ');
+    if (parts.length === 2) {
+      const day = parts[0];
+      const month = parts[1];
+      const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+      return `${day} ${capitalizedMonth}`;
+    }
+    return formatted;
+  } catch (e) {
+    return dateStr;
+  }
+};
+
+const getCategoryIconAndStyle = (categoryId: string) => {
+  switch (categoryId) {
+    case 'alimentacao':
+      return {
+        icon: '🍔',
+        bg: 'bg-emerald-50 dark:bg-emerald-950/20',
+        text: 'text-lg'
+      };
+    case 'transporte':
+      return {
+        icon: '🚗',
+        bg: 'bg-blue-50 dark:bg-blue-950/20',
+        text: 'text-lg'
+      };
+    case 'lazer':
+      return {
+        icon: '🎉',
+        bg: 'bg-amber-50 dark:bg-amber-950/20',
+        text: 'text-lg'
+      };
+    case 'saude':
+      return {
+        icon: '🩺',
+        bg: 'bg-rose-50 dark:bg-rose-950/20',
+        text: 'text-lg'
+      };
+    case 'presentes':
+      return {
+        icon: '🎁',
+        bg: 'bg-pink-50 dark:bg-pink-950/20',
+        text: 'text-lg'
+      };
+    case 'moradia':
+      return {
+        icon: '🏠',
+        bg: 'bg-violet-50 dark:bg-violet-950/20',
+        text: 'text-lg'
+      };
+    case 'assinaturas':
+      return {
+        icon: '📺',
+        bg: 'bg-cyan-50 dark:bg-cyan-950/20',
+        text: 'text-lg'
+      };
+    case 'salario':
+      return {
+        icon: '💰',
+        bg: 'bg-teal-50 dark:bg-teal-950/20',
+        text: 'text-lg'
+      };
+    case 'outros':
+      return {
+        icon: '📝',
+        bg: 'bg-slate-50 dark:bg-slate-900/40',
+        text: 'text-lg'
+      };
+    default:
+      return {
+        icon: '❓',
+        bg: 'bg-slate-50 dark:bg-slate-900/40',
+        text: 'text-lg'
+      };
+  }
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [showPasswordWall, setShowPasswordWall] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  // States
+  const [transactions, setTransactions] = useState<any[]>([
+    { id: '1', type: 'saida', value: 150.50, date: '2024-05-01', category: 'alimentacao', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Supermercado', essential: true, status: 'pago', recurring: false },
+    { id: '2', type: 'entrada', value: 5000.00, date: '2024-05-05', category: 'salario', bank: 'Itaú', method: 'PIX', description: 'Salário Mensal', essential: true, status: 'pago', recurring: true },
+    { id: '3', type: 'saida', value: 450.00, date: '2024-05-10', category: 'moradia', bank: 'Inter', method: 'Boleto', description: 'Condomínio', essential: true, status: 'atrasado', recurring: true },
+    { id: '4', type: 'saida', value: 29.90, date: '2024-05-12', category: 'assinaturas', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Netflix', essential: false, status: 'pago', recurring: true },
+    { id: '5', type: 'saida', value: 120.00, date: '2024-05-15', category: 'transporte', bank: 'Nubank', method: 'PIX', description: 'Gasolina', essential: true, status: 'pago', recurring: false },
+  ]);
+
+  const [budgets, setBudgets] = useState<Record<string, number>>({
+    alimentacao: 800,
+    transporte: 400,
+    lazer: 300,
+    saude: 200,
+    presentes: 150,
+  });
+
+  const [investments, setInvestments] = useState<any[]>([
+    { id: '1', name: 'CDB Pós-Fixado', value: 10500.40, type: 'Renda Fixa' },
+    { id: '2', name: 'Ações WEGE3', value: 2450.20, type: 'Ações' },
+  ]);
+
+  const [goals, setGoals] = useState<any[]>([
+    { id: '1', title: 'Reserva de Emergência', target: 10000, current: 4500, deadline: '2400-12-31', category: 'reserva' },
+    { id: '2', title: 'Viagem de Férias', target: 5000, current: 1500, deadline: '2026-12-25', category: 'viagem' },
+  ]);
+
+  const [vaults, setVaults] = useState<Vault[]>([
+    { id: '1', name: 'Reserva Especial', targetValue: 5000, currentValue: 1200, icon: '🛡️' },
+    { id: '2', name: 'Viagem de Fim de Ano', targetValue: 3050, currentValue: 450, icon: '✈️' }
+  ]);
+
+  const [recurrentes, setRecurrentes] = useState<Recorrente[]>([
+    { id: '1', name: 'Netflix Premium', value: 55.90, dueDate: 10, category: 'assinaturas', status: 'ativo', bank: 'Nubank' },
+    { id: '2', name: 'Academia', value: 110.00, dueDate: 5, category: 'lazer', status: 'ativo', bank: 'Itaú' },
+    { id: '3', name: 'Aluguel', value: 1200.00, dueDate: 1, category: 'moradia', status: 'ativo', bank: 'Inter' }
+  ]);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newEntry, setNewEntry] = useState({
+    type: 'saida',
+    value: '',
+    date: new Date().toISOString().split('T')[0],
+    category: 'outros',
+    bank: 'Nubank',
+    method: 'PIX',
+    description: '',
+    essential: false,
+    status: 'pago',
+    recurring: false
+  });
+
+  const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<any | null>(null);
+  const [statusMenuTx, setStatusMenuTx] = useState<any | null>(null);
+  const [statusMenuAnchor, setStatusMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  
+  // New quick popup menu states
+  const [typeMenuTx, setTypeMenuTx] = useState<any | null>(null);
+  const [typeMenuAnchor, setTypeMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+
+  const [categoryMenuTx, setCategoryMenuTx] = useState<any | null>(null);
+  const [categoryMenuAnchor, setCategoryMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+
+  const [bankMenuTx, setBankMenuTx] = useState<any | null>(null);
+  const [bankMenuAnchor, setBankMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+
+  // Inline inputs for description, value, and date
+  const [inlineEdit, setInlineEdit] = useState<{ id: string; field: 'description' | 'value' | 'date' } | null>(null);
+  const [inlineValue, setInlineValue] = useState<string>('');
+
+  const [typeFilter, setTypeFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
+  const [statusFilter, setStatusFilter] = useState<string>('todos');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('todos');
+  const [bankFilter, setBankFilter] = useState<string>('todos');
+  const [categoryFilter, setCategoryFilter] = useState<string>('todos');
+  const [startDateFilter, setStartDateFilter] = useState<string>('');
+  const [endDateFilter, setEndDateFilter] = useState<string>('');
+  const [txSearchQuery, setTxSearchQuery] = useState<string>('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(false);
+  const [selectedBudgetCategory, setSelectedBudgetCategory] = useState<string | null>(null);
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      // 1. Type
+      if (typeFilter !== 'todos' && t.type !== typeFilter) return false;
+      // 2. Status
+      if (statusFilter !== 'todos' && t.status !== statusFilter) return false;
+      // 3. Payment Method
+      if (paymentMethodFilter !== 'todos' && t.method !== paymentMethodFilter) return false;
+      // 4. Bank
+      if (bankFilter !== 'todos' && t.bank !== bankFilter) return false;
+      // 5. Category
+      if (categoryFilter !== 'todos' && t.category !== categoryFilter) return false;
+      // 6. Dates
+      if (startDateFilter && t.date < startDateFilter) return false;
+      if (endDateFilter && t.date > endDateFilter) return false;
+      
+      // 7. Search
+      if (txSearchQuery.trim()) {
+        const q = txSearchQuery.toLowerCase();
+        const descMatches = t.description?.toLowerCase().includes(q);
+        const valFormatted = t.value?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }).toLowerCase();
+        const valStr = t.value?.toString().toLowerCase();
+        const valMatches = valStr?.includes(q) || valFormatted?.includes(q);
+        const bankMatches = t.bank?.toLowerCase().includes(q);
+        const catMatches = t.category?.toLowerCase().includes(q);
+        const methodMatches = t.method?.toLowerCase().includes(q);
+        const statusMatches = t.status?.toLowerCase().includes(q);
+        if (!descMatches && !valMatches && !bankMatches && !catMatches && !methodMatches && !statusMatches) return false;
+      }
+      return true;
+    });
+  }, [transactions, typeFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter, txSearchQuery]);
+
+  const activeFiltersCount = useMemo(() => {
+    return (statusFilter !== 'todos' ? 1 : 0) +
+           (paymentMethodFilter !== 'todos' ? 1 : 0) +
+           (bankFilter !== 'todos' ? 1 : 0) +
+           (categoryFilter !== 'todos' ? 1 : 0) +
+           (startDateFilter ? 1 : 0) +
+           (endDateFilter ? 1 : 0);
+  }, [statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter]);
+
+  const clearAllFilters = () => {
+    setStatusFilter('todos');
+    setPaymentMethodFilter('todos');
+    setBankFilter('todos');
+    setCategoryFilter('todos');
+    setStartDateFilter('');
+    setEndDateFilter('');
+    setTxSearchQuery('');
+    setTypeFilter('todos');
+  };
+
+  // Budgets and Investments states
+  const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+  const [newBudget, setNewBudget] = useState({ categoryId: 'alimentacao', limit: '' });
+  const [isInvestmentModalOpen, setIsInvestmentModalOpen] = useState(false);
+  const [newInvestment, setNewInvestment] = useState({ name: '', value: '', type: 'Renda Fixa' });
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
+  const [investmentToDelete, setInvestmentToDelete] = useState<any | null>(null);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.style.colorScheme = 'light';
+    }
+  }, [theme]);
+
+  // Auth Observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync state with Firestore once authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    // A. Sync profile info
+    const syncUserProfile = async () => {
+      const userRef = doc(db, 'users', user.uid);
+      try {
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email || '',
+        }, { merge: true });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+      }
+    };
+    syncUserProfile();
+
+    // B. Live sync transactions
+    const transactionsPath = `users/${user.uid}/transactions`;
+    const unsubTransactions = onSnapshot(collection(db, transactionsPath), (snapshot) => {
+      if (snapshot.empty) {
+        // Seed default transactions if completely fresh Firebase database
+        const initialSeed = [
+          { id: '1', type: 'saida', value: 150.50, date: '2024-05-01', category: 'alimentacao', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Supermercado', essential: true, status: 'pago', recurring: false, userId: user.uid },
+          { id: '2', type: 'entrada', value: 5000.00, date: '2024-05-05', category: 'salario', bank: 'Itaú', method: 'PIX', description: 'Salário Mensal', essential: true, status: 'pago', recurring: true, userId: user.uid },
+          { id: '3', type: 'saida', value: 450.00, date: '2024-05-10', category: 'moradia', bank: 'Inter', method: 'Boleto', description: 'Condomínio', essential: true, status: 'atrasado', recurring: true, userId: user.uid },
+          { id: '4', type: 'saida', value: 29.90, date: '2024-05-12', category: 'assinaturas', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Netflix', essential: false, status: 'pago', recurring: true, userId: user.uid },
+          { id: '5', type: 'saida', value: 120.00, date: '2024-05-15', category: 'transporte', bank: 'Nubank', method: 'PIX', description: 'Gasolina', essential: true, status: 'pago', recurring: false, userId: user.uid },
+        ];
+        initialSeed.forEach(async (t) => {
+          try {
+            await setDoc(doc(db, transactionsPath, t.id), t);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, `${transactionsPath}/${t.id}`);
+          }
+        });
+      } else {
+        const txs: any[] = [];
+        snapshot.forEach((d) => {
+          txs.push(d.data());
+        });
+        txs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setTransactions(txs);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, transactionsPath);
+    });
+
+    // C. Live sync budgets
+    const budgetsPath = `users/${user.uid}/budgets`;
+    const unsubBudgets = onSnapshot(collection(db, budgetsPath), (snapshot) => {
+      if (snapshot.empty) {
+        const defaultBudgets: Record<string, number> = {
+          alimentacao: 800,
+          transporte: 400,
+          lazer: 300,
+          saude: 200,
+          presentes: 150,
+        };
+        Object.entries(defaultBudgets).forEach(async ([catId, limit]) => {
+          try {
+            await setDoc(doc(db, budgetsPath, catId), {
+              categoryId: catId,
+              limit,
+              userId: user.uid
+            });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, `${budgetsPath}/${catId}`);
+          }
+        });
+      } else {
+        const bdgs: Record<string, number> = {};
+        snapshot.forEach((d) => {
+          const data = d.data();
+          bdgs[data.categoryId] = data.limit;
+        });
+        setBudgets(bdgs);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, budgetsPath);
+    });
+
+    // D. Live sync investments
+    const investmentsPath = `users/${user.uid}/investments`;
+    const unsubInvestments = onSnapshot(collection(db, investmentsPath), (snapshot) => {
+      if (snapshot.empty) {
+        const defaultInvestments = [
+          { id: '1', name: 'CDB Pós-Fixado', value: 10500.40, type: 'Renda Fixa', userId: user.uid },
+          { id: '2', name: 'Ações WEGE3', value: 2450.20, type: 'Ações', userId: user.uid },
+        ];
+        defaultInvestments.forEach(async (inv) => {
+          try {
+            await setDoc(doc(db, investmentsPath, inv.id), inv);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, `${investmentsPath}/${inv.id}`);
+          }
+        });
+      } else {
+        const invs: any[] = [];
+        snapshot.forEach((d) => {
+          invs.push(d.data());
+        });
+        setInvestments(invs);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, investmentsPath);
+    });
+
+    // E. Live sync goals
+    const goalsPath = `users/${user.uid}/goals`;
+    const unsubGoals = onSnapshot(collection(db, goalsPath), (snapshot) => {
+      if (snapshot.empty) {
+        const defaultGoals = [
+          { id: '1', title: 'Reserva de Emergência', target: 10000, current: 4500, deadline: '2400-12-31', category: 'reserva', userId: user.uid },
+          { id: '2', title: 'Viagem de Férias', target: 5000, current: 1500, deadline: '2026-12-25', category: 'viagem', userId: user.uid },
+        ];
+        defaultGoals.forEach(async (g) => {
+          try {
+            await setDoc(doc(db, goalsPath, g.id), g);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, `${goalsPath}/${g.id}`);
+          }
+        });
+      } else {
+        const gls: any[] = [];
+        snapshot.forEach((d) => {
+          gls.push(d.data());
+        });
+        // Sort goals so they stay in consistent order
+        gls.sort((a, b) => b.id.localeCompare(a.id));
+        setGoals(gls);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, goalsPath);
+    });
+
+    // F. Live sync vaults
+    const vaultsPath = `users/${user.uid}/vaults`;
+    const unsubVaults = onSnapshot(collection(db, vaultsPath), (snapshot) => {
+      if (snapshot.empty) {
+        const defaultVaults: Vault[] = [
+          { id: '1', name: 'Reserva Especial', targetValue: 5000, currentValue: 1200, icon: '🛡️', userId: user.uid },
+          { id: '2', name: 'Viagem de Fim de Ano', targetValue: 3050, currentValue: 450, icon: '✈️', userId: user.uid }
+        ];
+        defaultVaults.forEach(async (v) => {
+          try {
+            await setDoc(doc(db, vaultsPath, v.id), v);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, `${vaultsPath}/${v.id}`);
+          }
+        });
+      } else {
+        const vts: Vault[] = [];
+        snapshot.forEach((d) => {
+          vts.push(d.data() as Vault);
+        });
+        vts.sort((a, b) => b.id.localeCompare(a.id));
+        setVaults(vts);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, vaultsPath);
+    });
+
+    // G. Live sync recurrentes
+    const recurrentesPath = `users/${user.uid}/recurrentes`;
+    const unsubRecurrentes = onSnapshot(collection(db, recurrentesPath), (snapshot) => {
+      if (snapshot.empty) {
+        const defaultRecurrentes: Recorrente[] = [
+          { id: '1', name: 'Netflix Premium', value: 55.90, dueDate: 10, category: 'assinaturas', status: 'ativo', bank: 'Nubank', userId: user.uid },
+          { id: '2', name: 'Academia', value: 110.00, dueDate: 5, category: 'lazer', status: 'ativo', bank: 'Itaú', userId: user.uid },
+          { id: '3', name: 'Aluguel', value: 1200.00, dueDate: 1, category: 'moradia', status: 'ativo', bank: 'Inter', userId: user.uid }
+        ];
+        defaultRecurrentes.forEach(async (r) => {
+          try {
+            await setDoc(doc(db, recurrentesPath, r.id), r);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.WRITE, `${recurrentesPath}/${r.id}`);
+          }
+        });
+      } else {
+        const rts: Recorrente[] = [];
+        snapshot.forEach((d) => {
+          rts.push(d.data() as Recorrente);
+        });
+        rts.sort((a, b) => b.id.localeCompare(a.id));
+        setRecurrentes(rts);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, recurrentesPath);
+    });
+
+    return () => {
+      unsubTransactions();
+      unsubBudgets();
+      unsubInvestments();
+      unsubGoals();
+      unsubVaults();
+      unsubRecurrentes();
+    };
+  }, [user]);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed: ", error);
+    }
+  };
+
+  const handleVerifyPassword = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (passwordInput === 'Lince7') {
+      setPasswordError('');
+      handleLogin();
+    } else {
+      setPasswordError('Senha incorreta! Digite novamente ou use uma das opções abaixo.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setIsDemoMode(false);
+      setShowPasswordWall(false);
+      setPasswordInput('');
+      setPasswordError('');
+      // Reset back to mock data on sign out so there's always something to view
+      setTransactions([
+        { id: '1', type: 'saida', value: 150.50, date: '2024-05-01', category: 'alimentacao', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Supermercado', essential: true, status: 'pago', recurring: false },
+        { id: '2', type: 'entrada', value: 5000.00, date: '2024-05-05', category: 'salario', bank: 'Itaú', method: 'PIX', description: 'Salário Mensal', essential: true, status: 'pago', recurring: true },
+        { id: '3', type: 'saida', value: 450.00, date: '2024-05-10', category: 'moradia', bank: 'Inter', method: 'Boleto', description: 'Condomínio', essential: true, status: 'atrasado', recurring: true },
+        { id: '4', type: 'saida', value: 29.90, date: '2024-05-12', category: 'assinaturas', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Netflix', essential: false, status: 'pago', recurring: true },
+        { id: '5', type: 'saida', value: 120.00, date: '2024-05-15', category: 'transporte', bank: 'Nubank', method: 'PIX', description: 'Gasolina', essential: true, status: 'pago', recurring: false },
+      ]);
+      setBudgets({
+        alimentacao: 800,
+        transporte: 400,
+        lazer: 300,
+        saude: 200,
+        presentes: 150,
+      });
+      setInvestments([
+        { id: '1', name: 'CDB Pós-Fixado', value: 10500.40, type: 'Renda Fixa' },
+        { id: '2', name: 'Ações WEGE3', value: 2450.20, type: 'Ações' },
+      ]);
+      setGoals([
+        { id: '1', title: 'Reserva de Emergência', target: 10000, current: 4500, deadline: '2400-12-31', category: 'reserva' },
+        { id: '2', title: 'Viagem de Férias', target: 5000, current: 1500, deadline: '2026-12-25', category: 'viagem' },
+      ]);
+      setVaults([
+        { id: '1', name: 'Reserva Especial', targetValue: 5000, currentValue: 1200, icon: '🛡️' },
+        { id: '2', name: 'Viagem de Fim de Ano', targetValue: 3050, currentValue: 450, icon: '✈️' }
+      ]);
+      setRecurrentes([
+        { id: '1', name: 'Netflix Premium', value: 55.90, dueDate: 10, category: 'assinaturas', status: 'ativo', bank: 'Nubank' },
+        { id: '2', name: 'Academia', value: 110.00, dueDate: 5, category: 'lazer', status: 'ativo', bank: 'Itaú' },
+        { id: '3', name: 'Aluguel', value: 1200.00, dueDate: 1, category: 'moradia', status: 'ativo', bank: 'Inter' }
+      ]);
+    } catch (error) {
+      console.error("Logout failed: ", error);
+    }
+  };
+
+  const stats = useMemo(() => {
+    const totalIn = transactions.filter(t => t.type === 'entrada').reduce((acc, curr) => acc + curr.value, 0);
+    const totalOut = transactions.filter(t => t.type === 'saida').reduce((acc, curr) => acc + curr.value, 0);
+    const overdue = transactions.filter(t => t.type === 'saida' && t.status === 'atrasado').reduce((acc, curr) => acc + curr.value, 0);
+    const toReceive = transactions.filter(t => t.type === 'entrada' && t.status === 'pendente').reduce((acc, curr) => acc + curr.value, 0);
+    
+    return {
+      balance: totalIn - totalOut,
+      totalIn,
+      totalOut,
+      overdue,
+      toReceive
+    };
+  }, [transactions]);
+
+  const allCategoriesData = useMemo(() => {
+    const dataMap: Record<string, { name: string; value: number; color: string }> = {};
+    
+    // Initialize standard categories
+    CATEGORIES.forEach(cat => {
+      dataMap[cat.id] = {
+        name: cat.name,
+        value: 0,
+        color: cat.color
+      };
+    });
+    
+    // Aggregate transactions
+    transactions.forEach(t => {
+      if (t.type === 'saida') {
+        const catId = (t.category || 'outros') as string;
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value) || 0;
+        
+        if (dataMap[catId]) {
+          dataMap[catId].value += val;
+        } else {
+          const displayLabel = catId.charAt(0).toUpperCase() + catId.slice(1);
+          const colors = ['#64748b', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4'];
+          const stringUniqueHash = catId.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
+          const color = colors[stringUniqueHash % colors.length];
+          
+          dataMap[catId] = {
+            name: displayLabel,
+            value: val,
+            color: color
+          };
+        }
+      }
+    });
+    
+    return Object.entries(dataMap).map(([id, item]) => ({
+      id,
+      ...item
+    })).sort((a, b) => b.value - a.value);
+  }, [transactions]);
+
+  const categoryExpensesData = useMemo(() => {
+    return allCategoriesData.filter(d => d.value > 0);
+  }, [allCategoriesData]);
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const transactionId = String(Date.now());
+    const valFloat = parseFloat(newEntry.value);
+    
+    const transaction = {
+      ...newEntry,
+      id: transactionId,
+      value: isNaN(valFloat) ? 0 : valFloat,
+      userId: user ? user.uid : 'demo'
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, transactionId), transaction);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
+      }
+    } else {
+      setTransactions([transaction, ...transactions]);
+    }
+
+    setIsModalOpen(false);
+    setNewEntry({
+      type: 'saida',
+      value: '',
+      date: new Date().toISOString().split('T')[0],
+      category: 'outros',
+      bank: 'Nubank',
+      method: 'PIX',
+      description: '',
+      essential: false,
+      status: 'pago',
+      recurring: false
+    });
+  };
+
+  const handleQuickPayRecurring = async (recorrente: Recorrente) => {
+    const transactionId = String(Date.now());
+    const currentDate = new Date().toISOString().split('T')[0];
+
+    const transaction = {
+      id: transactionId,
+      type: 'saida',
+      value: recorrente.value,
+      date: currentDate,
+      category: recorrente.category,
+      bank: recorrente.bank,
+      method: recorrente.category === 'assinaturas' ? 'Cartão de Crédito' : 'PIX',
+      description: `Mensal: ${recorrente.name}`,
+      essential: true,
+      status: 'pago',
+      recurring: true,
+      userId: user ? user.uid : 'demo'
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, transactionId), transaction);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
+      }
+    } else {
+      setTransactions(prev => [transaction, ...prev]);
+    }
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await deleteDoc(doc(db, path, id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `${path}/${id}`);
+      }
+    } else {
+      setTransactions(transactions.filter(t => t.id !== id));
+    }
+    setSelectedTransaction(null);
+  };
+
+  const handleUpdateTransaction = async (updatedTransaction: any) => {
+    const valFloat = parseFloat(updatedTransaction.value);
+    const finalTransaction = {
+      ...updatedTransaction,
+      value: isNaN(valFloat) ? 0 : valFloat
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, finalTransaction.id), finalTransaction);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `${path}/${finalTransaction.id}`);
+      }
+    } else {
+      setTransactions(transactions.map(t => t.id === finalTransaction.id ? finalTransaction : t));
+    }
+    setEditingTransaction(null);
+    setSelectedTransaction(null);
+  };
+
+  const handleQuickStatusChange = async (transaction: any, newStatus: string) => {
+    const updated = { ...transaction, status: newStatus };
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, updated.id), updated);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `${path}/${updated.id}`);
+      }
+    } else {
+      setTransactions(transactions.map(t => t.id === updated.id ? updated : t));
+    }
+    setStatusMenuTx(null);
+    setStatusMenuAnchor(null);
+  };
+
+  const handleQuickFieldUpdate = async (transaction: any, field: string, value: any) => {
+    let finalValue = value;
+    if (field === 'value') {
+      const valFloat = parseFloat(value.toString().replace(',', '.'));
+      finalValue = isNaN(valFloat) ? 0 : valFloat;
+    }
+    const updated = { ...transaction, [field]: finalValue };
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, updated.id), updated);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `${path}/${updated.id}`);
+      }
+    } else {
+      setTransactions(transactions.map(t => t.id === updated.id ? updated : t));
+    }
+  };
+
+  const handleAddBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const limitFloat = parseFloat(newBudget.limit);
+    if (!newBudget.categoryId || isNaN(limitFloat) || limitFloat <= 0) return;
+
+    const updatedBudgets = {
+      ...budgets,
+      [newBudget.categoryId]: limitFloat
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/budgets`;
+      try {
+        await setDoc(doc(db, path, newBudget.categoryId), {
+          categoryId: newBudget.categoryId,
+          limit: limitFloat,
+          userId: user.uid
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `${path}/${newBudget.categoryId}`);
+      }
+    } else {
+      setBudgets(updatedBudgets);
+    }
+
+    setIsBudgetModalOpen(false);
+    setNewBudget({ categoryId: 'alimentacao', limit: '' });
+  };
+
+  const handleDeleteBudget = async (categoryId: string) => {
+    if (user) {
+      const path = `users/${user.uid}/budgets`;
+      try {
+        await deleteDoc(doc(db, path, categoryId));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `${path}/${categoryId}`);
+      }
+    } else {
+      const updatedBudgets = { ...budgets };
+      delete updatedBudgets[categoryId];
+      setBudgets(updatedBudgets);
+    }
+    setSelectedBudgetCategory(null);
+    setBudgetToDelete(null);
+  };
+
+  const handleAddInvestment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const valFloat = parseFloat(newInvestment.value);
+    if (!newInvestment.name || isNaN(valFloat) || valFloat <= 0) return;
+
+    const id = String(Date.now());
+    const investmentItem = {
+      id,
+      name: newInvestment.name,
+      value: valFloat,
+      type: newInvestment.type,
+      userId: user ? user.uid : 'demo'
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/investments`;
+      try {
+        await setDoc(doc(db, path, id), investmentItem);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `${path}/${id}`);
+      }
+    } else {
+      setInvestments([investmentItem, ...investments]);
+    }
+
+    setIsInvestmentModalOpen(false);
+    setNewInvestment({ name: '', value: '', type: 'Renda Fixa' });
+  };
+
+  const handleDeleteInvestment = async (id: string) => {
+    if (user) {
+      const path = `users/${user.uid}/investments`;
+      try {
+        await deleteDoc(doc(db, path, id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `${path}/${id}`);
+      }
+    } else {
+      setInvestments(investments.filter(inv => inv.id !== id));
+    }
+    setInvestmentToDelete(null);
+  };
+
+  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+  const SidebarItem = ({ icon: Icon, label, id }: { icon: any, label: string, id: string }) => (
+    <button
+      onClick={() => setActiveTab(id)}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+        activeTab === id 
+          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20' 
+          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+      }`}
+    >
+      <Icon size={20} />
+      <span className="font-medium">{label}</span>
+    </button>
+  );
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 transition-colors duration-300 relative overflow-hidden">
+        {/* Subtle decorative background blur glows to fit premium look */}
+        <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-emerald-500/10 dark:bg-emerald-500/15 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-blue-500/10 dark:bg-blue-500/15 rounded-full blur-3xl"></div>
+
+        <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6 relative z-10">
+          <div className="relative">
+            <div className="bg-emerald-600 p-4 rounded-3xl shrink-0 animate-pulse relative z-10 shadow-lg shadow-emerald-500/30">
+              <Wallet className="text-white" size={40} />
+            </div>
+            <div className="absolute inset-0 bg-emerald-500/30 rounded-3xl blur-xl animate-ping opacity-60"></div>
+          </div>
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+              For<span className="text-emerald-600">tuna</span>
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 font-medium">Carregando seu portal financeiro seguro...</p>
+          </div>
+          <div className="w-16 h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden animate-pulse">
+            <div className="h-full bg-emerald-600 rounded-full w-8"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user && !isDemoMode) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between transition-colors duration-300 relative overflow-hidden">
+        {/* Ambient background decoration */}
+        <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 -z-10 animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2 -z-10"></div>
+
+        {/* Top Navbar */}
+        <header className="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-600 p-2 rounded-xl shrink-0 shadow-md shadow-emerald-500/10">
+              <Wallet className="text-white" size={24} />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+              For<span className="text-emerald-600">tuna</span>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={toggleTheme}
+              className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer shadow-sm"
+              title={theme === 'light' ? 'Tema Escuro' : 'Tema Claro'}
+              id="landing-theme-toggle"
+            >
+              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+          </div>
+        </header>
+
+        {/* Main Section */}
+        <main className="max-w-7xl mx-auto w-full px-6 flex-1 flex flex-col lg:flex-row items-center justify-center gap-12 py-12 relative z-10">
+          {/* Left Hero Column */}
+          <div className="flex-1 space-y-8 max-w-xl text-center lg:text-left">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100/80 dark:bg-emerald-950/30 border border-emerald-200/50 dark:border-emerald-800/30 rounded-full text-emerald-800 dark:text-emerald-400 text-xs font-semibold tracking-wide uppercase">
+              ✨ Gestão Financeira Inteligente
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">
+              Sua fortuna sob <span className="text-emerald-600">completo controle</span>.
+            </h2>
+            <p className="text-base text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+              Fortuna ajuda você a mapear despesas, consolidar investimentos e planejar orçamentos através de uma interface elegante e segura. Tudo sincronizado com sua conta do Google na nuvem.
+            </p>
+
+            {/* Feature Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-2 hover:translate-y-[-2px] transition-all duration-300">
+                <div className="p-2 bg-emerald-100/50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 w-fit rounded-lg">
+                  <LayoutDashboard size={18} />
+                </div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Visão Geral Dinâmica</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Gráficos de pizza, tendências de entradas e saídas automáticas.</p>
+              </div>
+
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-2 hover:translate-y-[-2px] transition-all duration-300">
+                <div className="p-2 bg-blue-100/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 w-fit rounded-lg">
+                  <Target size={18} />
+                </div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Orçamentos Conscientes</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Monitore limites sob medida e controle excessos de gastos.</p>
+              </div>
+
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-2 hover:translate-y-[-2px] transition-all duration-300">
+                <div className="p-2 bg-amber-100/50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 w-fit rounded-lg">
+                  <TrendingUp size={18} />
+                </div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Investimentos</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Monitore o crescimento do seu capital de Renda Fixa e Ações.</p>
+              </div>
+
+              <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm space-y-2 hover:translate-y-[-2px] transition-all duration-300">
+                <div className="p-2 bg-purple-100/50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 w-fit rounded-lg">
+                  <Calendar size={18} />
+                </div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Calendário Diário</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Veja o fluxo planejado por dia e evite atrasar contas.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Login Column */}
+          <div className="w-full max-w-md">
+            <motion.div
+              initial={{ opacity: 0, y: 15, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 0.1, duration: 0.4 }}
+              className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-xl shadow-slate-100 dark:shadow-none space-y-6"
+            >
+              {!showPasswordWall ? (
+                <>
+                  <div className="text-center space-y-2">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">Entrar no Fortuna</h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
+                      Crie ou acesse sua conta gratuitamente usando o login do Google de forma 100% segura.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setShowPasswordWall(true)}
+                    className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl transition-all cursor-pointer shadow-lg shadow-emerald-500/20 dark:shadow-none text-base active:scale-[0.98]"
+                    id="main-login-btn"
+                  >
+                    {/* SVG for Google Icon */}
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
+                    </svg>
+                    Entrar com Google
+                  </button>
+
+                  <div className="flex items-center my-4">
+                    <div className="flex-1 border-t border-slate-200 dark:border-slate-800"></div>
+                    <span className="px-3 text-xs text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider font-mono">ou</span>
+                    <div className="flex-1 border-t border-slate-200 dark:border-slate-800"></div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => setIsDemoMode(true)}
+                      className="w-full flex items-center justify-center gap-2 px-5 py-3.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300 font-semibold rounded-2xl transition-all cursor-pointer text-sm"
+                      id="main-demo-btn"
+                    >
+                      Explorar no Modo de Demonstração
+                    </button>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center leading-relaxed">
+                      No modo de demonstração, seus dados serão guardados temporariamente neste navegador. Use uma conta Google para sincronizar e manter tudo salvo de forma permanente e segura na nuvem.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <form onSubmit={handleVerifyPassword} className="space-y-6">
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPasswordWall(false);
+                        setPasswordInput('');
+                        setPasswordError('');
+                      }}
+                      className="text-xs text-slate-500 hover:text-emerald-600 flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      <ChevronLeft size={16} /> Voltar
+                    </button>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mt-2">Senha de acesso</h3>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
+                      Por favor, informe a senha para poder prosseguir com o login do Google.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Senha</label>
+                    <input
+                      type="password"
+                      placeholder="Digite a senha..."
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-transparent text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:text-white transition-all"
+                      autoFocus
+                    />
+                    {passwordError && (
+                      <p className="text-xs text-rose-500 font-medium flex items-center gap-1.5 mt-1.5">
+                        <AlertCircle size={14} /> {passwordError}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl transition-all cursor-pointer shadow-lg shadow-emerald-500/20 dark:shadow-none text-base active:scale-[0.98]"
+                  >
+                    Confirmar e Prosseguir
+                  </button>
+
+                  <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                    <a
+                      href="https://wa.me/5519971087116?text=N%C3%A3o%20sei%20a%20senha%20do%20Fortuna"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-xs transition-all cursor-pointer text-center"
+                    >
+                      Não sei a senha
+                    </a>
+                    <a
+                      href="https://wa.me/5519971087116?text=Esqueci%20a%20senha%20do%20Fortuna"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-xs transition-all cursor-pointer text-center"
+                    >
+                      Esqueci a senha
+                    </a>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </div>
+        </main>
+
+        {/* Global Footer */}
+        <footer className="border-t border-slate-100 dark:border-slate-900/60 w-full py-6 mt-12 bg-white/30 dark:bg-slate-950/20 backdrop-blur-sm">
+          <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-400 dark:text-slate-500">
+            <p>© 2026 Fortuna. Todos os direitos reservados. Conexão encriptada de ponta a ponta.</p>
+            <div className="flex items-center gap-y-2 sm:gap-4 flex-wrap justify-center">
+              <span className="flex items-center gap-1">
+                <Shield className="w-3.5 h-3.5 text-emerald-600" /> Banco de dados encriptado e protegido
+              </span>
+              <span className="hidden sm:inline">•</span>
+              <span>100% Privado</span>
+            </div>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-6 hidden md:flex flex-col">
+        <div className="flex items-center gap-3 mb-10 px-2">
+          <div className="bg-emerald-600 p-2 rounded-lg shrink-0">
+            <Wallet className="text-white" size={24} />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight dark:text-white">For<span className="text-emerald-600">tuna</span></h1>
+        </div>
+        
+        <nav className="flex-1 space-y-2">
+          <SidebarItem icon={LayoutDashboard} label="Visão Geral" id="dashboard" />
+          <SidebarItem icon={List} label="Transações" id="transactions" />
+          <SidebarItem icon={Target} label="Orçamentos" id="budgets" />
+          <SidebarItem icon={TrendingUp} label="Investimentos" id="investments" />
+          <SidebarItem icon={Lock} label="Cofre" id="cofre" />
+          <SidebarItem icon={Repeat} label="Recorrentes" id="recurrentes" />
+          <SidebarItem icon={Trophy} label="Metas" id="goals" />
+          <SidebarItem icon={Calendar} label="Calendário" id="calendar" />
+        </nav>
+
+        <div className="mt-8 space-y-4">
+          {/* Theme switcher */}
+          <button 
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+          >
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            <span className="font-medium">{theme === 'light' ? 'Tema Escuro' : 'Tema Claro'}</span>
+          </button>
+
+          {/* Sado Total Card */}
+          <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl">
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-1 uppercase tracking-wider">Saldo Total</p>
+            <p className="text-xl font-bold text-emerald-900 dark:text-emerald-50">
+              R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </p>
+          </div>
+
+          {/* Authentication Panel */}
+          {authLoading ? (
+            <div className="py-2 text-center text-xs text-slate-400">Carregando perfil...</div>
+          ) : user ? (
+            <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                {user.photoURL ? (
+                  <img 
+                    src={user.photoURL} 
+                    alt={user.displayName || 'Avatar'} 
+                    className="w-8 h-8 rounded-full border border-emerald-500/30 shrink-0"
+                    referrerPolicy="no-referrer"
+                    id="user-avatar"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                    {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate dark:text-slate-100">{user.displayName || 'Usuário'}</p>
+                  <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-rose-50/50 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                id="logout-btn"
+              >
+                <LogOut size={12} />
+                Desconectar
+              </button>
+            </div>
+          ) : (
+            <div className="p-3 bg-emerald-50/30 dark:bg-slate-800/30 rounded-2xl border border-dashed border-emerald-500/20 dark:border-slate-700/50 flex flex-col gap-2">
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">Sincronize com a nuvem de forma segura.</p>
+              <button
+                onClick={handleLogin}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-200 dark:shadow-none cursor-pointer"
+                id="login-btn"
+              >
+                <LogIn size={12} />
+                Entrar com Google
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-24 md:pb-8">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h2 className="text-2xl font-bold dark:text-white">Olá, {user ? (user.displayName || 'Organizado') : 'Organizado'}! 👋</h2>
+            <p className="text-slate-500 dark:text-slate-400">
+              {user ? 'Seus dados financeiros sincronizados em tempo real.' : 'Aqui está o resumo do seu dinheiro hoje.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl flex-1 md:flex-none flex items-center justify-center gap-2 font-semibold shadow-lg shadow-emerald-100 dark:shadow-emerald-900/20 transition-all active:scale-95 cursor-pointer"
+            >
+              <Plus size={20} />
+              Nova Transação
+            </button>
+          </div>
+        </header>
+
+        <AnimatePresence mode="wait">
+          {activeTab === 'dashboard' && (
+            <motion.div 
+              key="dashboard"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* Top Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                      <ArrowUpCircle size={20} />
+                    </div>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Entradas</span>
+                  </div>
+                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">R$ {stats.totalIn.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-lg">
+                      <ArrowDownCircle size={20} />
+                    </div>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Saídas</span>
+                  </div>
+                  <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 text-right">R$ {stats.totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg">
+                      <AlertCircle size={20} />
+                    </div>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Contas Atrasadas</span>
+                  </div>
+                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">R$ {stats.overdue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                      <CheckCircle2 size={20} />
+                    </div>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Pra Receber</span>
+                  </div>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">R$ {stats.toReceive.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+
+              {/* Charts Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-emerald-600" /> Gastos por Categoria</h3>
+                  
+                  {categoryExpensesData.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-16 h-16 bg-slate-50 dark:bg-slate-850/50 rounded-full flex items-center justify-center mb-3 text-slate-400">
+                        <PieChartIcon size={28} />
+                      </div>
+                      <p className="font-bold text-sm text-slate-705 dark:text-slate-200">Nenhum gasto registrado</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Adicione uma transação de saída para gerar o gráfico.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                      <div className="h-56 md:col-span-5 flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={categoryExpensesData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={75}
+                              paddingAngle={4}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {categoryExpensesData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              contentStyle={{ 
+                                backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
+                                borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
+                                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                                borderRadius: '12px'
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Complete custom scrollable breakdown list of ALL categories */}
+                      <div className="md:col-span-7 space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {(() => {
+                          const totalSpend = allCategoriesData.reduce((acc, curr) => acc + curr.value, 0);
+                          return allCategoriesData.map((item) => {
+                            const percentage = totalSpend > 0 ? (item.value / totalSpend) * 100 : 0;
+                            return (
+                              <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{item.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-right">
+                                  <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                                    R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold w-10 shrink-0">
+                                    {percentage > 0 ? `${percentage.toFixed(1)}%` : '0%'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><TrendingUp size={18} className="text-emerald-600" /> Fluxo de Caixa (Maio)</h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={[
+                        { day: '01', value: 200 },
+                        { day: '05', value: 5000 },
+                        { day: '10', value: 4500 },
+                        { day: '15', value: 4300 },
+                        { day: '20', value: 4100 },
+                      ]}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
+                        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                        <YAxis hide />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', color: theme === 'dark' ? '#f8fafc' : '#0f172a' }}
+                        />
+                        <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recents */}
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden text-slate-900 dark:text-slate-100">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <h3 className="font-bold">Últimas Atividades</h3>
+                  <button onClick={() => setActiveTab('transactions')} className="text-emerald-600 text-sm font-semibold hover:underline">Ver todas</button>
+                </div>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {transactions.slice(0, 5).map(t => (
+                    <div 
+                      key={t.id} 
+                      onClick={() => setSelectedTransaction(t)}
+                      className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTypeMenuTx(t);
+                            setTypeMenuAnchor({ x: e.clientX, y: e.clientY });
+                          }}
+                          className={`p-2 rounded-xl shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500/50 hover:scale-105 active:scale-95 transition-all ${
+                            t.type === 'entrada' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
+                          }`}
+                          title="Clique para alterar tipo"
+                        >
+                          {t.type === 'entrada' ? <Plus size={20} /> : <Minus size={20} />}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {inlineEdit?.id === t.id && inlineEdit?.field === 'description' ? (
+                              <input
+                                type="text"
+                                value={inlineValue}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setInlineValue(e.target.value)}
+                                onBlur={() => {
+                                  handleQuickFieldUpdate(t, 'description', inlineValue);
+                                  setInlineEdit(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleQuickFieldUpdate(t, 'description', inlineValue);
+                                    setInlineEdit(null);
+                                  } else if (e.key === 'Escape') {
+                                    setInlineEdit(null);
+                                  }
+                                }}
+                                className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-48"
+                              />
+                            ) : (
+                              <p 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setInlineEdit({ id: t.id, field: 'description' });
+                                  setInlineValue(t.description);
+                                }}
+                                className="font-semibold cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
+                                title="Clique para editar título"
+                              >
+                                {t.description}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 mt-0.5">
+                            {inlineEdit?.id === t.id && inlineEdit?.field === 'date' ? (
+                              <input
+                                type="date"
+                                value={inlineValue}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setInlineValue(e.target.value)}
+                                onBlur={() => {
+                                  handleQuickFieldUpdate(t, 'date', inlineValue);
+                                  setInlineEdit(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleQuickFieldUpdate(t, 'date', inlineValue);
+                                    setInlineEdit(null);
+                                  } else if (e.key === 'Escape') {
+                                    setInlineEdit(null);
+                                  }
+                                }}
+                                className="px-1 py-0.5 text-[10px] border-b border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none"
+                              />
+                            ) : (
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setInlineEdit({ id: t.id, field: 'date' });
+                                  setInlineValue(t.date);
+                                }}
+                                className="cursor-pointer hover:underline decoration-emerald-500/60"
+                                title="Mudar data"
+                              >
+                                {formatDateDisplay(t.date)}
+                              </span>
+                            )}
+                            <span>•</span>
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setBankMenuTx(t);
+                                setBankMenuAnchor({ x: e.clientX, y: e.clientY });
+                              }}
+                              className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-emerald-500/60 transition-colors"
+                              title="Alterar banco"
+                            >
+                              {t.bank}
+                            </span>
+                            <span>•</span>
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCategoryMenuTx(t);
+                                setCategoryMenuAnchor({ x: e.clientX, y: e.clientY });
+                              }}
+                              className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-emerald-500/60 transition-colors capitalize"
+                              title="Alterar categoria"
+                            >
+                              {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {inlineEdit?.id === t.id && inlineEdit?.field === 'value' ? (
+                          <input
+                            type="text"
+                            value={inlineValue}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setInlineValue(e.target.value)}
+                            onBlur={() => {
+                              handleQuickFieldUpdate(t, 'value', inlineValue);
+                              setInlineEdit(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleQuickFieldUpdate(t, 'value', inlineValue);
+                                setInlineEdit(null);
+                              } else if (e.key === 'Escape') {
+                                setInlineEdit(null);
+                              }
+                            }}
+                            className="px-2 py-0.5 text-xs text-right font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-24 ml-auto block mb-1"
+                          />
+                        ) : (
+                          <p 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInlineEdit({ id: t.id, field: 'value' });
+                              setInlineValue(t.value.toString());
+                            }}
+                            className={`font-bold cursor-pointer hover:underline decoration-dotted decoration-emerald-500 ${t.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}
+                            title="Clique para editar valor"
+                          >
+                            {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                        )}
+                        <span 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setStatusMenuTx(t);
+                            setStatusMenuAnchor({ x: e.clientX, y: e.clientY });
+                          }}
+                          className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
+                            t.status === 'atrasado' ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300' : 
+                            t.status === 'pago' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 
+                            t.status === 'futuro' ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-305' :
+                            'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : t.status === 'futuro' ? 'Futuro' : 'Pendente'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'transactions' && (
+            <motion.div 
+              key="transactions"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* ADVANCED FILTER SECTION */}
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm transition-all duration-300">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="text-lg font-black dark:text-white">Listagem Completa</h3>
+                    
+                    {/* Segmented Type Filter */}
+                    <div className="flex bg-slate-100/50 dark:bg-slate-800/80 p-0.5 rounded-xl text-[10px] font-bold border border-slate-200/40 dark:border-slate-700/50 shadow-xs shrink-0 select-none backdrop-blur-sm">
+                      <button
+                        type="button"
+                        onClick={() => setTypeFilter(typeFilter === 'todos' ? 'todos' : 'todos')}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${typeFilter === 'todos' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTypeFilter('entrada')}
+                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${typeFilter === 'entrada' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-emerald-500'}`}
+                      >
+                        <Plus size={10} /> Entradas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTypeFilter('saida')}
+                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${typeFilter === 'saida' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-rose-500'}`}
+                      >
+                        <Minus size={10} /> Saídas
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                    {/* Search Bar */}
+                    <div className="relative flex-1 lg:flex-initial min-w-[200px] lg:min-w-[285px]">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 z-10" size={14} />
+                      <input
+                        type="text"
+                        placeholder="Buscar por descrição, valor ou banco..."
+                        value={txSearchQuery}
+                        onChange={(e) => setTxSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-9 py-2.5 bg-slate-100/50 hover:bg-slate-100/80 dark:bg-slate-800/70 dark:hover:bg-slate-800/90 border border-slate-200/50 dark:border-slate-700/50 rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-slate-200 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 backdrop-blur-sm relative"
+                      />
+                      {txSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setTxSearchQuery('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-400 hover:text-slate-600 transition-colors z-10"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Advanced Filters Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                      className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold border flex items-center gap-2 cursor-pointer transition-all ${
+                        showAdvancedFilters || activeFiltersCount > 0
+                          ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/50'
+                          : 'bg-slate-100/50 hover:bg-slate-100/80 dark:bg-slate-800/80 dark:hover:bg-slate-800/80 border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-300 backdrop-blur-sm'
+                      }`}
+                    >
+                      <Filter size={13} />
+                      Filtros
+                      {activeFiltersCount > 0 && (
+                        <span className="bg-emerald-500 text-white rounded-full text-[10px] px-1.5 py-0.5 font-black scale-90 leading-none">
+                          {activeFiltersCount}
+                        </span>
+                      )}
+                      {showAdvancedFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+
+                    {/* Clear Filters Button */}
+                    {(activeFiltersCount > 0 || typeFilter !== 'todos') && (
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="px-3 py-2.5 rounded-2xl text-xs font-bold border border-dashed text-rose-500 hover:text-rose-600 dark:text-rose-455 dark:hover:text-rose-400 border-rose-200 hover:border-rose-350 dark:border-rose-900/40 hover:dark:border-rose-800 transition-all flex items-center gap-1 hover:bg-rose-50/20"
+                        title="Limpar todos os filtros"
+                      >
+                        <X size={12} />
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Collapsible Advanced Filters Panel */}
+                <AnimatePresence>
+                  {showAdvancedFilters && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                      animate={{ height: 'auto', opacity: 1, marginTop: 16 }}
+                      exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                      className="overflow-hidden border-t border-slate-100 dark:border-slate-800/60 pt-4"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5">
+                        {/* Filter Status */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Status</label>
+                          <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
+                          >
+                            <option value="todos" className="dark:bg-slate-900">Todos Status</option>
+                            <option value="pago" className="dark:bg-slate-900">Pago</option>
+                            <option value="pendente" className="dark:bg-slate-900">Pendente</option>
+                            <option value="atrasado" className="dark:bg-slate-900">Atrasado</option>
+                            <option value="futuro" className="dark:bg-slate-900">Futuro</option>
+                          </select>
+                        </div>
+
+                        {/* Filter Categoria */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Categoria</label>
+                          <select
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer capitalize transition-all backdrop-blur-md"
+                          >
+                            <option value="todos" className="dark:bg-slate-900">Todas Categorias</option>
+                            {CATEGORIES.map(c => (
+                              <option key={c.id} value={c.id} className="dark:bg-slate-900">{c.name}</option>
+                            ))}
+                            <option value="salario" className="dark:bg-slate-900">Salário</option>
+                          </select>
+                        </div>
+
+                        {/* Filter Banco */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Banco</label>
+                          <select
+                            value={bankFilter}
+                            onChange={(e) => setBankFilter(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
+                          >
+                            <option value="todos" className="dark:bg-slate-900">Todos Bancos</option>
+                            {BANKS.map(b => (
+                              <option key={b} value={b} className="dark:bg-slate-900">{b}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Filter Método */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Método</label>
+                          <select
+                            value={paymentMethodFilter}
+                            onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
+                          >
+                            <option value="todos" className="dark:bg-slate-900">Todos Métodos</option>
+                            {['PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Boleto', 'Dinheiro', 'Transferência'].map(m => (
+                              <option key={m} value={m} className="dark:bg-slate-900">{m}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Filter Data Inicial */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Data Inicial</label>
+                          <input
+                            type="date"
+                            value={startDateFilter}
+                            onChange={(e) => setStartDateFilter(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
+                          />
+                        </div>
+
+                        {/* Filter Data Final */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Data Final</label>
+                          <input
+                            type="date"
+                            value={endDateFilter}
+                            onChange={(e) => setEndDateFilter(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* LIST CONTAINER */}
+              <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-xs border border-slate-100 dark:border-slate-800 overflow-hidden relative">
+                {filteredTransactions.length === 0 ? (
+                  <div className="p-16 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center gap-2">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-full text-slate-400 dark:text-slate-500 mb-2">
+                      <Filter size={32} />
+                    </div>
+                    <h4 className="font-bold text-slate-700 dark:text-slate-350">Nenhuma transação encontrada</h4>
+                    <p className="text-xs text-slate-450 dark:text-slate-500 max-w-sm leading-relaxed">Não encontramos transações correspondentes aos filtros aplicados. Tente limpar os filtros selecionados.</p>
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="mt-4 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl active:scale-95 transition-all cursor-pointer shadow-md"
+                    >
+                      Limpar Filtros
+                    </button>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-55 dark:bg-slate-905 border-b border-slate-100 dark:border-slate-800/80">
+                          <th className="p-4 pl-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Tipo</th>
+                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Descrição</th>
+                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-left">Valor</th>
+                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Data</th>
+                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Categoria</th>
+                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Banco</th>
+                          <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                        {filteredTransactions.map(t => (
+                          <tr 
+                            key={t.id} 
+                            onClick={() => setSelectedTransaction(t)}
+                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                          >
+                        <td className="p-4">
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTypeMenuTx(t);
+                              setTypeMenuAnchor({ x: e.clientX, y: e.clientY });
+                            }}
+                            className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase whitespace-nowrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
+                              t.type === 'entrada' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300'
+                            }`}
+                            title="Trocar tipo de transação"
+                          >
+                            {t.type === 'entrada' ? 'Entrada' : 'Saída'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl shrink-0 select-none" title={CATEGORIES.find(c => c.id === t.category)?.name || t.category}>
+                              {getCategoryIconAndStyle(t.category).icon}
+                            </span>
+                            <div className="flex flex-col">
+                              {inlineEdit?.id === t.id && inlineEdit?.field === 'description' ? (
+                                <input
+                                  type="text"
+                                  value={inlineValue}
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => setInlineValue(e.target.value)}
+                                  onBlur={() => {
+                                    handleQuickFieldUpdate(t, 'description', inlineValue);
+                                    setInlineEdit(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleQuickFieldUpdate(t, 'description', inlineValue);
+                                      setInlineEdit(null);
+                                    } else if (e.key === 'Escape') {
+                                      setInlineEdit(null);
+                                    }
+                                  }}
+                                  className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-48 animate-fade-in"
+                                />
+                              ) : (
+                                <span 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInlineEdit({ id: t.id, field: 'description' });
+                                    setInlineValue(t.description);
+                                  }}
+                                  className="font-semibold dark:text-slate-200 cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
+                                  title="Clique para editar descrição"
+                                >
+                                  {t.description}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-400 uppercase tracking-tighter">{t.method}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className={`p-4 text-sm font-bold text-left whitespace-nowrap ${t.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                          {inlineEdit?.id === t.id && inlineEdit?.field === 'value' ? (
+                            <input
+                              type="text"
+                              value={inlineValue}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setInlineValue(e.target.value)}
+                              onBlur={() => {
+                                handleQuickFieldUpdate(t, 'value', inlineValue);
+                                setInlineEdit(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleQuickFieldUpdate(t, 'value', inlineValue);
+                                  setInlineEdit(null);
+                                } else if (e.key === 'Escape') {
+                                  setInlineEdit(null);
+                                }
+                              }}
+                              className="px-2 py-0.5 text-xs text-left font-bold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-24"
+                            />
+                          ) : (
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInlineEdit({ id: t.id, field: 'value' });
+                                setInlineValue(t.value.toString());
+                              }}
+                              className="cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
+                              title="Clique para editar valor"
+                            >
+                              R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                          {inlineEdit?.id === t.id && inlineEdit?.field === 'date' ? (
+                            <input
+                              type="date"
+                              value={inlineValue}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setInlineValue(e.target.value)}
+                              onBlur={() => {
+                                handleQuickFieldUpdate(t, 'date', inlineValue);
+                                setInlineEdit(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleQuickFieldUpdate(t, 'date', inlineValue);
+                                  setInlineEdit(null);
+                                } else if (e.key === 'Escape') {
+                                  setInlineEdit(null);
+                                }
+                              }}
+                              className="px-1.5 py-0.5 text-xs border-b border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none"
+                            />
+                          ) : (
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInlineEdit({ id: t.id, field: 'date' });
+                                setInlineValue(t.date);
+                              }}
+                              className="cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
+                              title="Alterar data"
+                            >
+                              {formatDateDisplay(t.date)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCategoryMenuTx(t);
+                              setCategoryMenuAnchor({ x: e.clientX, y: e.clientY });
+                            }}
+                            className="px-2 py-1 bg-slate-100/60 dark:bg-slate-800/60 hover:bg-slate-200/60 dark:hover:bg-slate-700/70 rounded text-xs font-semibold text-slate-600 dark:text-slate-400 capitalize cursor-pointer hover:ring-2 hover:ring-emerald-500/30 transition-all whitespace-nowrap"
+                            title="Mudar categoria"
+                          >
+                            {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
+                          </span>
+                        </td>
+                        <td className="p-4 text-sm font-medium whitespace-nowrap dark:text-slate-300">
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBankMenuTx(t);
+                              setBankMenuAnchor({ x: e.clientX, y: e.clientY });
+                            }}
+                            className="cursor-pointer hover:text-emerald-500 hover:underline px-1.5 py-1 rounded transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                            title="Alterar banco"
+                          >
+                            {t.bank}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStatusMenuTx(t);
+                              setStatusMenuAnchor({ x: e.clientX, y: e.clientY });
+                            }}
+                            className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase whitespace-nowrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
+                              t.status === 'atrasado' ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300' : 
+                              t.status === 'pago' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 
+                              t.status === 'futuro' ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-305' :
+                              'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                            }`}
+                          >
+                            {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : t.status === 'futuro' ? 'Futuro' : 'Pendente'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+          {activeTab === 'budgets' && (
+            <motion.div 
+              key="budgets"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-8"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-bold dark:text-white">Meus Limites de Gastos</h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">
+                    Meta de economia: <span className="font-bold text-emerald-600 dark:text-emerald-400">20%</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsBudgetModalOpen(true)}
+                  className="px-4 py-2 bg-slate-900 border border-transparent hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-98 shadow-sm"
+                >
+                  <Plus size={14} /> Novo Limite
+                </button>
+              </div>
+              
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 {Object.entries(budgets).map(([catId, limit]) => {
+                   const category = CATEGORIES.find(c => c.id === catId);
+                   const numLimit = limit as number;
+                   const spent = transactions
+                     .filter(t => t.type === 'saida' && t.category === catId)
+                     .reduce((acc, curr) => acc + curr.value, 0);
+                   const percent = Math.min((spent / numLimit) * 100, 100);
+                   
+                   return (
+                     <div 
+                       key={catId} 
+                       onClick={() => setSelectedBudgetCategory(catId)}
+                       className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:border-slate-200 dark:hover:border-slate-700/80 hover:shadow-md transition-all duration-300 active:scale-[0.99] group relative overflow-hidden"
+                     >
+                       {/* Subtle accent hover backdrop glow */}
+                       <div className="absolute inset-0 bg-slate-50/50 dark:bg-slate-800/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                       
+                       <div className="flex justify-between items-center mb-4 relative z-10">
+                         <div className="flex items-center gap-3">
+                           {(() => {
+                             const info = getCategoryIconAndStyle(catId);
+                             return (
+                               <div className={`w-10 h-10 rounded-xl ${info.bg} flex items-center justify-center text-lg shadow-sm group-hover:scale-110 transition-transform duration-300`}>
+                                 {info.icon}
+                               </div>
+                             );
+                           })()}
+                           <span className="font-bold text-lg dark:text-slate-100">{category?.name || catId}</span>
+                         </div>
+                         <div className="text-right">
+                           <span className="text-slate-400 dark:text-slate-500 text-xs block">Limite: R$ {numLimit}</span>
+                           <span className="text-emerald-500 dark:text-emerald-400 text-[10px] font-bold tracking-wider group-hover:translate-x-1 block mt-0.5 transition-transform duration-200">VER EXTRATO ➔</span>
+                         </div>
+                       </div>
+                       
+                       <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-4 relative z-10">
+                         <div 
+                           className={`h-full transition-all duration-500 ${percent > 90 ? 'bg-rose-500' : percent > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                           style={{ width: `${percent}%` }}
+                         ></div>
+                       </div>
+                       
+                       <div className="flex justify-between items-end relative z-10">
+                         <div>
+                           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Gasto</p>
+                           <p className="text-xl font-black dark:text-white-850 dark:text-white">R$ {spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                         </div>
+                         <div className="text-right">
+                           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Restante</p>
+                           <p className={`font-bold ${numLimit - spent < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                             R$ {(numLimit - spent).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                           </p>
+                         </div>
+                       </div>
+                     </div>
+                   );
+                 })}
+               </div>
+            </motion.div>
+          )}
+
+           {activeTab === 'investments' && (
+             <motion.div 
+               key="investments"
+               initial={{ opacity: 0, y: 10 }}
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: -10 }}
+               className="space-y-6"
+             >
+                <div className="bg-gradient-to-br from-slate-900 to-slate-800 dark:from-slate-950 dark:to-slate-900 text-white p-8 rounded-3xl relative overflow-hidden shadow-2xl">
+                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                     <div>
+                       <p className="text-slate-400 font-medium mb-1">Patrimônio Investido</p>
+                       <h3 className="text-4xl font-black mb-4">
+                         R$ {investments.reduce((acc, curr) => acc + curr.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                       </h3>
+                       <div className="flex gap-4">
+                         <span className="flex items-center gap-1 text-emerald-400 text-sm font-bold bg-white/10 px-3 py-1 rounded-full border border-white/10">
+                           <TrendingUp size={14} /> +4.2% esse mês
+                         </span>
+                       </div>
+                     </div>
+                     <button
+                       onClick={() => setIsInvestmentModalOpen(true)}
+                       className="self-start sm:self-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-505 dark:bg-emerald-650 dark:hover:bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-98 shadow-md"
+                     >
+                       <Plus size={15} /> Novo Investimento
+                     </button>
+                   </div>
+                   <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
+                     <TrendingUp size={160} />
+                   </div>
+                </div>
+ 
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                   <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6">
+                     <h4 className="font-bold mb-4 dark:text-white">Ativos na Carteira</h4>
+                     {investments.length === 0 ? (
+                       <div className="text-center py-12 text-slate-400 dark:text-slate-550">
+                         <p className="text-3xl mb-2">📈</p>
+                         <p className="text-sm font-semibold">Nenhum investimento registrado ainda.</p>
+                       </div>
+                     ) : (
+                       <div className="space-y-4">
+                         {investments.map((inv, index) => (
+                           <div key={inv.id || index} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl transition-all group/row hover:bg-slate-100/50 dark:hover:bg-slate-805/50 border border-slate-100/30 dark:border-slate-800/30">
+                             <div className="flex items-center gap-3">
+                               <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                                 <Building2 size={18} className="text-slate-600 dark:text-slate-400" />
+                               </div>
+                               <div>
+                                 <p className="font-bold dark:text-slate-100">{inv.name}</p>
+                                 <p className="text-xs text-slate-400 dark:text-slate-500">{inv.type}</p>
+                               </div>
+                             </div>
+                             <div className="flex items-center gap-4">
+                               <p className="font-bold text-slate-900 dark:text-white">R$ {inv.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                               <button
+                                 onClick={() => setInvestmentToDelete(inv)}
+                                 className="p-1 px-2 text-slate-400 hover:text-rose-500 dark:hover:text-rose-450 md:opacity-0 group-hover/row:opacity-100 focus:opacity-100 transition-opacity rounded cursor-pointer"
+                                 title="Excluir Ativo"
+                               >
+                                 <Trash2 size={14} />
+                               </button>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     )}
+                   </div>
+ 
+                   <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 flex flex-col items-center">
+                     <h4 className="font-bold mb-4 text-center dark:text-white">Diversificação</h4>
+                     {investments.length === 0 ? (
+                       <div className="flex items-center justify-center flex-1 py-12 text-slate-350 dark:text-slate-600">
+                         <p className="text-sm italic">Adicione ativos para ver o gráfico.</p>
+                       </div>
+                     ) : (() => {
+                       const totalInvested = investments.reduce((acc, curr) => acc + curr.value, 0);
+                       const distributionEntries = Object.entries(
+                         investments.reduce((acc: Record<string, number>, curr) => {
+                           acc[curr.type] = (acc[curr.type] || 0) + curr.value;
+                           return acc;
+                         }, {})
+                       ).map(([name, value]) => ({
+                         name,
+                         value: value as number,
+                         percentage: totalInvested > 0 ? ((value as number) / totalInvested) * 100 : 0
+                       }));
+
+                       const getPieColor = (type: string, idx: number) => {
+                         const mapColors: Record<string, string> = {
+                           'Renda Fixa': '#10b981',
+                           'Ações': '#3b82f6',
+                           'Fundos Imobiliários': '#f59e0b',
+                           'Previdência': '#8b5cf6',
+                           'Criptomoedas': '#ec4899',
+                           'Outros': '#6366f1'
+                         };
+                         return mapColors[type] || ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1'][idx % 6];
+                       };
+
+                       return (
+                         <>
+                           <div className="h-48 w-full">
+                             <ResponsiveContainer width="100%" height="100%">
+                               <PieChart>
+                                 <Pie
+                                   data={distributionEntries}
+                                   cx="50%"
+                                   cy="50%"
+                                   innerRadius={45}
+                                   outerRadius={65}
+                                   dataKey="value"
+                                   stroke="none"
+                                 >
+                                   {distributionEntries.map((entry, idx) => (
+                                     <Cell key={`cell-${idx}`} fill={getPieColor(entry.name, idx)} />
+                                   ))}
+                                 </Pie>
+                                 <Tooltip 
+                                   formatter={(value: any) => `R$ ${parseFloat(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                                   contentStyle={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', color: theme === 'dark' ? '#f8fafc' : '#0f172a' }}
+                                 />
+                               </PieChart>
+                             </ResponsiveContainer>
+                           </div>
+                           <div className="mt-4 w-full space-y-2">
+                             {distributionEntries.map((entry, idx) => (
+                               <div key={entry.name} className="flex justify-between text-xs items-center">
+                                 <span className="flex items-center gap-1.5 dark:text-slate-400">
+                                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getPieColor(entry.name, idx) }}></div> 
+                                   {entry.name}
+                                 </span>
+                                 <span className="font-bold dark:text-slate-200">{entry.percentage.toFixed(1)}%</span>
+                               </div>
+                             ))}
+                           </div>
+                         </>
+                       );
+                     })()}
+                   </div>
+                </div>
+             </motion.div>
+           )}
+
+          {activeTab === 'goals' && (
+            <Metas 
+              goals={goals} 
+              setGoals={setGoals} 
+              user={user} 
+              theme={theme} 
+            />
+          )}
+
+          {activeTab === 'cofre' && (
+            <Cofre 
+              vaults={vaults} 
+              setVaults={setVaults} 
+              user={user} 
+              theme={theme} 
+            />
+          )}
+
+          {activeTab === 'recurrentes' && (
+            <Recorrentes 
+              recurrentes={recurrentes} 
+              setRecurrentes={setRecurrentes} 
+              user={user} 
+              theme={theme}
+              onQuickPay={handleQuickPayRecurring}
+            />
+          )}
+
+          {activeTab === 'calendar' && (
+            <CalendarView 
+              transactions={transactions} 
+              theme={theme} 
+              onSelectTransaction={setSelectedTransaction}
+            />
+          )}
+        </AnimatePresence>
+      </main>
+
+      {/* Transaction Modal */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden relative z-10 transition-colors duration-300"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-xl font-bold dark:text-white">Nova Transação</h3>
+                <button 
+                  onClick={() => setIsModalOpen(false)} 
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-slate-600"
+                >
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+              
+              <form onSubmit={handleAddTransaction} className="p-6 space-y-4">
+                <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setNewEntry({...newEntry, type: 'saida'})}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${newEntry.type === 'saida' ? 'bg-white dark:bg-slate-700 text-rose-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                  >
+                    <Minus size={14} className="inline mr-1" /> Saída
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setNewEntry({...newEntry, type: 'entrada'})}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${newEntry.type === 'entrada' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                  >
+                    <Plus size={14} className="inline mr-1" /> Entrada
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Valor (R$)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      required
+                      placeholder="0,00"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white text-base md:text-sm"
+                      value={newEntry.value}
+                      onChange={(e) => setNewEntry({...newEntry, value: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Data</label>
+                    <input 
+                      type="date" 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white text-base md:text-sm"
+                      value={newEntry.date}
+                      onChange={(e) => setNewEntry({...newEntry, date: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Descrição</label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="Ex: Aluguel, Supermercado..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white text-base md:text-sm"
+                    value={newEntry.description}
+                    onChange={(e) => setNewEntry({...newEntry, description: e.target.value})}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Categoria</label>
+                    <select 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none capitalize dark:text-white text-base md:text-sm"
+                      value={newEntry.category}
+                      onChange={(e) => setNewEntry({...newEntry, category: e.target.value})}
+                    >
+                      {CATEGORIES.map(c => <option key={c.id} value={c.id}>{getCategoryIconAndStyle(c.id).icon} {c.name}</option>)}
+                      <option value="salario">💰 Salário</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Banco</label>
+                    <select 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                      value={newEntry.bank}
+                      onChange={(e) => setNewEntry({...newEntry, bank: e.target.value})}
+                    >
+                      {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Status da Transação</label>
+                  <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+                    <button 
+                      type="button" 
+                      onClick={() => setNewEntry({...newEntry, status: 'pago'})}
+                      className={`flex-1 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${newEntry.status === 'pago' ? 'bg-emerald-555 bg-emerald-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-705 dark:hover:text-slate-200'}`}
+                    >
+                      {newEntry.type === 'entrada' ? 'Recebido' : 'Pago'}
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setNewEntry({...newEntry, status: 'pendente'})}
+                      className={`flex-1 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${newEntry.status === 'pendente' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-705 dark:hover:text-slate-200'}`}
+                    >
+                      Pendente
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setNewEntry({...newEntry, status: 'atrasado'})}
+                      className={`flex-1 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${newEntry.status === 'atrasado' ? 'bg-rose-650 bg-rose-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-750 dark:hover:text-slate-200'}`}
+                    >
+                      Atrasado
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={() => setNewEntry({...newEntry, status: 'futuro'})}
+                      className={`flex-1 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${newEntry.status === 'futuro' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-705 dark:hover:text-slate-200'}`}
+                    >
+                      Futuro
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                   <div className="flex items-center gap-2">
+                      <Bookmark size={16} className={newEntry.essential ? 'text-emerald-500' : 'text-slate-400'} />
+                      <span className="text-sm font-medium dark:text-slate-300">Gasto Essencial?</span>
+                   </div>
+                   <button 
+                    type="button"
+                    onClick={() => setNewEntry({...newEntry, essential: !newEntry.essential})}
+                    className={`w-10 h-5 rounded-full relative transition-all ${newEntry.essential ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                   >
+                      <motion.div 
+                        initial={false}
+                        animate={{ x: newEntry.essential ? 20 : 0 }}
+                        className="absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm" 
+                      />
+                   </button>
+                </div>
+
+                <button 
+                  type="submit"
+                  className="w-full bg-slate-900 dark:bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-xl hover:bg-black dark:hover:bg-emerald-700 transition-all active:scale-[0.98] mt-2"
+                >
+                  Confirmar Lançamento
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Transaction Details Modal */}
+      <AnimatePresence>
+        {selectedTransaction && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedTransaction(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.2rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 dark:border-slate-800/80 overflow-hidden relative z-10 transition-colors duration-300"
+            >
+              {/* Top Hero Card header (Colored depending on category/type) */}
+              <div className={`p-8 text-center relative overflow-hidden ${
+                selectedTransaction.type === 'entrada'
+                  ? 'bg-gradient-to-br from-emerald-500/10 via-emerald-50/20 to-white dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900 border-b border-emerald-100/30 dark:border-emerald-950/20'
+                  : 'bg-gradient-to-br from-rose-500/10 via-rose-50/20 to-white dark:from-rose-950/20 dark:via-slate-900 dark:to-slate-900 border-b border-rose-100/30 dark:border-rose-950/20'
+              }`}>
+                {/* Decorative glowing gradient aura */}
+                <div className={`absolute -top-12 -left-12 w-32 h-32 rounded-full blur-2xl opacity-40 ${selectedTransaction.type === 'entrada' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full blur-2xl opacity-40 ${selectedTransaction.type === 'entrada' ? 'bg-teal-400' : 'bg-pink-400'}`} />
+
+                <div className="absolute top-4 right-4 flex items-center">
+                  <button 
+                    onClick={() => setSelectedTransaction(null)} 
+                    className="p-1.5 bg-slate-200/40 hover:bg-slate-200/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/80 rounded-full transition-all text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    <Plus className="rotate-45" size={18} />
+                  </button>
+                </div>
+                
+                {/* Visual Category Badge Icon */}
+                <div className={`mx-auto w-16 h-16 rounded-[1.25rem] flex items-center justify-center mb-4 shadow-sm border backdrop-blur-md transition-transform duration-300 hover:scale-105 ${
+                  selectedTransaction.type === 'entrada'
+                    ? 'bg-emerald-100 border-emerald-200/50 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-800/40 dark:text-emerald-400'
+                    : 'bg-rose-100 border-rose-200/50 text-rose-600 dark:bg-rose-900/30 dark:border-rose-800/40 dark:text-rose-400'
+                }`}>
+                  {selectedTransaction.type === 'entrada' ? <ArrowUpCircle size={28} /> : <ArrowDownCircle size={28} />}
+                </div>
+
+                <span className={`text-[10px] font-bold tracking-widest uppercase px-3 py-1 rounded-full ${
+                  selectedTransaction.type === 'entrada' 
+                    ? 'bg-emerald-100/80 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' 
+                    : 'bg-rose-100/80 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'
+                }`}>
+                  {selectedTransaction.type === 'entrada' ? 'Entrada / Receita' : 'Saída / Despesa'}
+                </span>
+                
+                <h4 className={`text-3xl font-black mt-3 tracking-tight ${selectedTransaction.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                  R$ {selectedTransaction.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </h4>
+                
+                <p className="text-slate-700 dark:text-slate-200 text-base font-bold mt-1 max-w-xs mx-auto line-clamp-2">
+                  {selectedTransaction.description}
+                </p>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                {/* Details grid layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Categoria */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    {(() => {
+                      const info = getCategoryIconAndStyle(selectedTransaction.category);
+                      return (
+                        <div className={`w-8 h-8 rounded-xl ${info.bg} flex items-center justify-center text-sm font-semibold`}>
+                          {info.icon}
+                        </div>
+                      );
+                    })()}
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Categoria</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize truncate max-w-[120px]">
+                        {CATEGORIES.find(c => c.id === selectedTransaction.category)?.name || selectedTransaction.category}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Banco */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                      <Building2 size={15} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Conta / Banco</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
+                        {selectedTransaction.bank}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Método de Pagamento */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-violet-600 dark:text-violet-400">
+                      <Wallet size={15} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Método</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
+                        {selectedTransaction.method || 'PIX'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Data */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                      <Calendar size={15} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Vencimento</p>
+                      <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
+                        {(() => {
+                          try {
+                            return format(parseISO(selectedTransaction.date), "dd/MM/yyyy", { locale: ptBR });
+                          } catch (e) {
+                            return selectedTransaction.date;
+                          }
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Status */}
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/55 flex flex-col justify-between">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-2">Status</span>
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase text-center inline-block w-fit ${
+                      selectedTransaction.status === 'atrasado' ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200/10' : 
+                      selectedTransaction.status === 'pago' ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200/10' : 
+                      selectedTransaction.status === 'futuro' ? 'bg-sky-100 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-200/10' :
+                      'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {selectedTransaction.status === 'pago' ? 'Pago' : selectedTransaction.status === 'atrasado' ? 'Atrasado' : selectedTransaction.status === 'futuro' ? 'Futuro' : 'Pendente'}
+                    </span>
+                  </div>
+
+                  {/* Prioridade */}
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-100 dark:border-slate-800/55 flex flex-col justify-between">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-2">Classificação</span>
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase text-center inline-block w-fit ${
+                      selectedTransaction.essential ? 'bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 border border-amber-200/10' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}>
+                      {selectedTransaction.essential ? 'Essencial' : 'Opcional'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Recorrência banner */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/30 border border-slate-100 dark:border-slate-800/60 rounded-2xl flex items-center justify-between text-xs">
+                  <span className="text-slate-400 flex items-center gap-1.5 font-medium">
+                    <TrendingUp size={14} className="text-emerald-500" /> Frequência de transação
+                  </span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                    {selectedTransaction.recurring ? 'Sim (Recorrente)' : 'Lançamento Único'}
+                  </span>
+                </div>
+
+                {/* Styled Premium Action Buttons */}
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingTransaction({ ...selectedTransaction });
+                      setSelectedTransaction(null);
+                    }}
+                    className="flex-1 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all text-sm shadow-md shadow-emerald-500/10 active:scale-[0.98] cursor-pointer"
+                    title="Editar Lançamento"
+                  >
+                    <Pencil size={15} />
+                    <span>Editar</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTransaction(selectedTransaction.id)}
+                    className="p-3.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 rounded-2xl transition-colors active:scale-[0.98] cursor-pointer"
+                    title="Excluir Lançamento"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTransaction(null)}
+                    className="px-5 py-3.5 border border-slate-200 dark:border-slate-800/80 text-slate-600 dark:text-slate-300 font-bold rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-sm active:scale-[0.98] cursor-pointer"
+                  >
+                    Voltar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Budget Modal */}
+      <AnimatePresence>
+        {isBudgetModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsBudgetModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-black dark:text-white">Definir Limite de Gasto</h3>
+                <button 
+                  onClick={() => setIsBudgetModalOpen(false)} 
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 cursor-pointer"
+                >
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddBudget} className="p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Categoria</label>
+                  <select
+                    value={newBudget.categoryId}
+                    onChange={(e) => setNewBudget({ ...newBudget, categoryId: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-semibold"
+                  >
+                    {CATEGORIES.map(cat => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Valor Limite Mensal (R$)</label>
+                  <input 
+                    type="number"
+                    required
+                    step="0.01"
+                    min="0.01"
+                    placeholder="Ex: 500"
+                    value={newBudget.limit}
+                    onChange={(e) => setNewBudget({ ...newBudget, limit: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-bold"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setIsBudgetModalOpen(false)}
+                    className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 py-3.5 rounded-2xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-xs cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-650 text-white py-3.5 rounded-2xl font-black shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                  >
+                    Definir Limite
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Investment Modal */}
+      <AnimatePresence>
+        {isInvestmentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsInvestmentModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-black dark:text-white">Adicionar Investimento</h3>
+                <button 
+                  onClick={() => setIsInvestmentModalOpen(false)} 
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 cursor-pointer"
+                >
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddInvestment} className="p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Nome do Ativo</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Ex: Tesouro Selic 2029"
+                    value={newInvestment.name}
+                    onChange={(e) => setNewInvestment({ ...newInvestment, name: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-medium"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Tipo</label>
+                    <select
+                      value={newInvestment.type}
+                      onChange={(e) => setNewInvestment({ ...newInvestment, type: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-semibold"
+                    >
+                      <option value="Renda Fixa">Renda Fixa</option>
+                      <option value="Ações">Ações</option>
+                      <option value="Fundos Imobiliários">Fundos Imobiliários</option>
+                      <option value="Previdência">Previdência</option>
+                      <option value="Criptomoedas">Criptomoedas</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Valor Aplicado (R$)</label>
+                    <input 
+                      type="number"
+                      required
+                      step="0.01"
+                      min="0.01"
+                      placeholder="Ex: 500.00"
+                      value={newInvestment.value}
+                      onChange={(e) => setNewInvestment({ ...newInvestment, value: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setIsInvestmentModalOpen(false)}
+                    className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 py-3.5 rounded-2xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-xs cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-650 text-white py-3.5 rounded-2xl font-black shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                  >
+                    Adicionar Ativo
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Transaction Modal */}
+      <AnimatePresence>
+        {editingTransaction && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                const prev = { ...editingTransaction };
+                setEditingTransaction(null);
+                setSelectedTransaction(prev);
+              }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.2rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 dark:border-slate-800/80 overflow-hidden relative z-10 transition-colors duration-300"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-xl font-bold dark:text-white">Editar Transação</h3>
+                <button 
+                  onClick={() => {
+                    const prev = { ...editingTransaction };
+                    setEditingTransaction(null);
+                    setSelectedTransaction(prev);
+                  }} 
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+              
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleUpdateTransaction(editingTransaction);
+                }} 
+                className="p-6 space-y-4"
+              >
+                <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setEditingTransaction({...editingTransaction, type: 'saida'})}
+                    className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all ${editingTransaction.type === 'saida' ? 'bg-white dark:bg-slate-700 text-rose-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                  >
+                    <Minus size={14} className="inline mr-1" /> Saída
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setEditingTransaction({...editingTransaction, type: 'entrada'})}
+                    className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all ${editingTransaction.type === 'entrada' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                  >
+                    <Plus size={14} className="inline mr-1" /> Entrada
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Valor (R$)</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      required
+                      placeholder="0,00"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                      value={editingTransaction.value}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, value: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Data</label>
+                    <input 
+                      type="date" 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                      value={editingTransaction.date}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, date: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Descrição</label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="Ex: Aluguel, Supermercado..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                    value={editingTransaction.description}
+                    onChange={(e) => setEditingTransaction({...editingTransaction, description: e.target.value})}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Categoria</label>
+                    <select 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none capitalize dark:text-white"
+                      value={editingTransaction.category}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, category: e.target.value})}
+                    >
+                      {CATEGORIES.map(c => <option key={c.id} value={c.id}>{getCategoryIconAndStyle(c.id).icon} {c.name}</option>)}
+                      <option value="salario">💰 Salário</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Banco</label>
+                    <select 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                      value={editingTransaction.bank}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, bank: e.target.value})}
+                    >
+                      {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Status de Pagamento</label>
+                    <select 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                      value={editingTransaction.status || 'pago'}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, status: e.target.value})}
+                    >
+                      <option value="pago">Pago</option>
+                      <option value="pendente">Pendente</option>
+                      <option value="atrasado">Atrasado</option>
+                      <option value="futuro">Futuro</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Método de Pagamento</label>
+                    <select 
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none dark:text-white"
+                      value={editingTransaction.method || 'PIX'}
+                      onChange={(e) => setEditingTransaction({...editingTransaction, method: e.target.value})}
+                    >
+                      {['PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Boleto', 'Dinheiro', 'Transferência'].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Essencial Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <Bookmark size={16} className={editingTransaction.essential ? 'text-emerald-500' : 'text-slate-400'} />
+                      <span className="text-xs font-semibold dark:text-slate-300">Gasto Essencial?</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setEditingTransaction({...editingTransaction, essential: !editingTransaction.essential})}
+                      className={`w-10 h-5 rounded-full relative transition-all ${editingTransaction.essential ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                    >
+                      <motion.div 
+                        initial={false}
+                        animate={{ x: editingTransaction.essential ? 20 : 0 }}
+                        className="absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm" 
+                      />
+                    </button>
+                  </div>
+
+                  {/* Recorrente Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp size={16} className={editingTransaction.recurring ? 'text-emerald-500' : 'text-slate-400'} />
+                      <span className="text-xs font-semibold dark:text-slate-300">Recorrente?</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setEditingTransaction({...editingTransaction, recurring: !editingTransaction.recurring})}
+                      className={`w-10 h-5 rounded-full relative transition-all ${editingTransaction.recurring ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                    >
+                      <motion.div 
+                        initial={false}
+                        animate={{ x: editingTransaction.recurring ? 20 : 0 }}
+                        className="absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm" 
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      const prev = { ...editingTransaction };
+                      setEditingTransaction(null);
+                      setSelectedTransaction(prev);
+                    }}
+                    className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-2xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-sm active:scale-[0.98] cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-2xl font-bold shadow-xl shadow-emerald-500/10 dark:shadow-none transition-all text-sm active:scale-[0.98]"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Category Budget Statement Modal */}
+      <AnimatePresence>
+        {selectedBudgetCategory && (() => {
+          const category = CATEGORIES.find(c => c.id === selectedBudgetCategory);
+          const categoryName = category?.name || selectedBudgetCategory;
+          const info = getCategoryIconAndStyle(selectedBudgetCategory);
+          const catTransactions = transactions.filter(t => t.category === selectedBudgetCategory);
+          const budgetLimit = budgets[selectedBudgetCategory] || 0;
+          const spent = catTransactions
+            .filter(t => t.type === 'saida')
+            .reduce((acc, curr) => acc + curr.value, 0);
+          const percent = budgetLimit > 0 ? Math.min((spent / budgetLimit) * 100, 100) : 0;
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedBudgetCategory(null)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              />
+              <motion.div 
+                initial={{ scale: 0.93, opacity: 0, y: 15 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.93, opacity: 0, y: 15 }}
+                className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.2rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 dark:border-slate-800/80 overflow-hidden relative z-10 transition-colors duration-300 flex flex-col max-h-[85vh]"
+              >
+                {/* Header */}
+                <div className={`p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r ${info.bg}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl select-none">{info.icon}</span>
+                    <div>
+                      <h3 className="text-lg font-extrabold dark:text-white capitalize">{categoryName}</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Histórico e Limite de Gastos</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedBudgetCategory(null)} 
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 cursor-pointer"
+                  >
+                    <Plus className="rotate-45" size={24} />
+                  </button>
+                </div>
+
+                {/* Info / Progress Cards */}
+                <div className="p-6 bg-slate-50 dark:bg-slate-950/20 border-b border-slate-100 dark:border-slate-800/60 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60 shadow-xs">
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider mb-0.5">Definido</p>
+                      <p className="text-sm sm:text-lg font-extrabold dark:text-slate-100">
+                        {budgetLimit > 0 ? `R$ ${budgetLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Sem limite'}
+                      </p>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800/60 shadow-xs">
+                      <p className="text-[10px] text-slate-400 uppercase font-black tracking-wider mb-0.5">Consumido</p>
+                      <p className={`text-sm sm:text-lg font-extrabold ${spent > budgetLimit && budgetLimit > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                        R$ {spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {budgetLimit > 0 && (
+                    <div>
+                      <div className="flex justify-between items-center text-xs text-slate-400 dark:text-slate-500 font-bold mb-1.5">
+                        <span>Progresso do Limite</span>
+                        <span>{percent.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-100 dark:bg-slate-850 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ${percent > 90 ? 'bg-rose-500' : percent > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Transactions List */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-3 min-h-[250px] max-h-[45vh]">
+                  <h4 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">Transações registradas</h4>
+                  
+                  {catTransactions.length === 0 ? (
+                    <div className="text-center py-12">
+                      <p className="text-3xl mb-2">🍃</p>
+                      <p className="text-sm font-semibold text-slate-400 dark:text-slate-500">Nenhum lançamento nesta categoria ainda.</p>
+                    </div>
+                  ) : (
+                    catTransactions
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .map((t) => (
+                        <div 
+                          key={t.id}
+                          onClick={() => {
+                            setSelectedTransaction(t);
+                            setSelectedBudgetCategory(null);
+                          }}
+                          className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-800/60 border border-slate-100 dark:border-slate-800/50 transition-all duration-200 cursor-pointer group active:scale-[0.99]"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="text-lg shrink-0">
+                              {getCategoryIconAndStyle(t.category).icon}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-850 dark:text-slate-200 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                {t.description}
+                              </p>
+                              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                                {formatDateDisplay(t.date)} • {t.bank}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className={`text-sm font-black ${
+                              t.type === 'entrada' 
+                                ? 'text-emerald-600 dark:text-emerald-400' 
+                                : 'text-slate-900 dark:text-slate-100'
+                            }`}>
+                              {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </p>
+                            <span className="text-[9px] dark:text-slate-500 text-slate-400 font-bold uppercase">
+                              {t.method}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+
+                {/* Footer status / Action */}
+                <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 dark:text-slate-500 font-bold">
+                  <div className="flex items-center gap-2">
+                    <span>Lançamentos: {catTransactions.length}</span>
+                    <button
+                      onClick={() => setBudgetToDelete(selectedBudgetCategory)}
+                      className="text-rose-500 hover:text-rose-600 font-extrabold flex items-center gap-1 cursor-pointer ml-2 border border-rose-105 dark:border-rose-950/40 px-2 py-1 rounded transition-colors"
+                    >
+                      <Trash2 size={12} /> Excluir Limite
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setNewEntry(prev => ({ ...prev, category: selectedBudgetCategory, type: 'saida' }));
+                      setSelectedBudgetCategory(null);
+                      setIsModalOpen(true);
+                    }}
+                    className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 font-extrabold flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    + Criar Lançamento
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* iOS-style Bottom Tab Bar for Mobile */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-100 dark:border-slate-800/80 flex md:hidden items-center justify-around py-3 px-2 pb-safe shadow-[0_-4px_24px_rgba(0,0,0,0.04)] select-none">
+        <button 
+          onClick={() => setActiveTab('dashboard')}
+          className={`flex flex-col items-center gap-1 flex-1 py-1 transition-all ${
+            activeTab === 'dashboard' ? 'text-emerald-600 dark:text-emerald-500 font-bold scale-105' : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <LayoutDashboard size={20} />
+          <span className="text-[9px] font-bold">Resumo</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('transactions')}
+          className={`flex flex-col items-center gap-1 flex-1 py-1 transition-all ${
+            activeTab === 'transactions' ? 'text-emerald-600 dark:text-emerald-500 font-bold scale-105' : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <List size={20} />
+          <span className="text-[9px] font-bold">Transações</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('budgets')}
+          className={`flex flex-col items-center gap-1 flex-1 py-1 transition-all ${
+            activeTab === 'budgets' ? 'text-emerald-600 dark:text-emerald-500 font-bold scale-105' : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <Target size={20} />
+          <span className="text-[9px] font-bold">Limites</span>
+        </button>
+
+        <button 
+          onClick={() => setActiveTab('investments')}
+          className={`flex flex-col items-center gap-1 flex-1 py-1 transition-all ${
+            activeTab === 'investments' ? 'text-emerald-600 dark:text-emerald-500 font-bold scale-105' : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <TrendingUp size={20} />
+          <span className="text-[9px] font-bold">Investir</span>
+        </button>
+
+        <button 
+          onClick={() => setIsMobileMenuOpen(true)}
+          className={`flex flex-col items-center gap-1 flex-1 py-1 transition-all ${
+            isMobileMenuOpen ? 'text-emerald-600 dark:text-emerald-500 font-bold' : 'text-slate-400 dark:text-slate-500'
+          }`}
+        >
+          <Menu size={20} />
+          <span className="text-[9px] font-bold">Mais</span>
+        </button>
+      </nav>
+
+      {/* iOS-style Bottom Sheet (More Menu) */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden">
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            {/* Sheet */}
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 280 }}
+              className="bg-white dark:bg-slate-900 w-full rounded-t-[2rem] shadow-2xl overflow-hidden relative z-10 border-t border-slate-100 dark:border-slate-800 p-6 pb-12 space-y-6 max-h-[85vh] overflow-y-auto"
+            >
+              {/* Drag Handle */}
+              <div className="w-12 h-1 bg-slate-200 dark:bg-slate-800/80 rounded-full mx-auto mb-2" />
+
+              {/* Perfil Header */}
+              <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 rounded-2xl">
+                {user ? (
+                  <>
+                    {user.photoURL ? (
+                      <img 
+                        src={user.photoURL} 
+                        alt="Avatar" 
+                        className="w-12 h-12 rounded-full border-2 border-emerald-500/20"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-emerald-600 flex items-center justify-center text-white font-extrabold text-lg">
+                        {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 font-sans">
+                      <p className="font-bold text-sm block truncate dark:text-slate-100">{user.displayName || 'Usuário'}</p>
+                      <p className="text-xs text-slate-400 block truncate">{user.email}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                      <Wallet size={24} />
+                    </div>
+                    <div className="flex-1 min-w-0 font-sans">
+                      <p className="font-bold text-sm block truncate dark:text-slate-100">Modo de Demonstração</p>
+                      <p className="text-xs text-slate-400 block truncate">Dados salvos localmente</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Menu items representing pages or functions */}
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    setActiveTab('cofre');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'cofre' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Lock size={18} className="text-amber-500" />
+                    <span className="text-sm">Cofre Virtual</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('recurrentes');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'recurrentes' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Repeat size={18} className="text-indigo-505 text-indigo-500" />
+                    <span className="text-sm">Gastos Recorrentes</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('goals');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'goals' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Trophy size={18} className="text-amber-500" />
+                    <span className="text-sm">Metas Financeiras</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('calendar');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'calendar' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Calendar size={18} className="text-indigo-500" />
+                    <span className="text-sm">Calendário de Contas</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+              </div>
+
+              {/* Preferences Accent (Theme Switcher and Signout) */}
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/30 rounded-2xl border border-slate-100 dark:border-slate-850/30">
+                  <div className="flex items-center gap-3 text-slate-700 dark:text-slate-300">
+                    {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                    <span className="text-sm font-semibold">Tema Principal</span>
+                  </div>
+                  <button 
+                    onClick={toggleTheme}
+                    className="p-1 px-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-705 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer text-slate-800 dark:text-slate-100"
+                  >
+                    Ativar {theme === 'light' ? 'Tema Escuro' : 'Tema Claro'}
+                  </button>
+                </div>
+
+                {user ? (
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 p-4 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 font-bold text-sm rounded-2xl transition-all cursor-pointer"
+                  >
+                    <LogOut size={16} />
+                    Desconectar Conta Google
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleLogin();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 p-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-2xl transition-all cursor-pointer shadow-md"
+                  >
+                    <LogIn size={16} />
+                    Entrar com o Google
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* BUDGET DELETION DIALOG */}
+      <AnimatePresence>
+        {budgetToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setBudgetToDelete(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300 p-6 text-center"
+            >
+              <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/20 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-500">
+                <Trash2 size={28} />
+              </div>
+              
+              <h3 className="text-lg font-black dark:text-white">Excluir Orçamento</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                Tem certeza de que deseja excluir o limite de orçamento para a categoria <strong className="text-slate-705 dark:text-slate-200 font-extrabold capitalize">"{budgetToDelete}"</strong>?
+              </p>
+
+              <div className="flex gap-3 mt-6">
+                <button 
+                  type="button"
+                  onClick={() => setBudgetToDelete(null)}
+                  className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleDeleteBudget(budgetToDelete)}
+                  className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-xl font-black shadow-md shadow-rose-500/10 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                >
+                  Excluir Limite
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* INVESTMENT DELETION DIALOG */}
+      <AnimatePresence>
+        {investmentToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setInvestmentToDelete(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300 p-6 text-center"
+            >
+              <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/20 rounded-full flex items-center justify-center mx-auto mb-4 text-rose-500">
+                <Trash2 size={28} />
+              </div>
+              
+              <h3 className="text-lg font-black dark:text-white">Excluir Investimento</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                Tem certeza de que deseja excluir o investimento <strong className="text-slate-705 dark:text-slate-200 font-extrabold">"{investmentToDelete.name}"</strong> da sua carteira?
+              </p>
+
+              <div className="flex gap-3 mt-6">
+                <button 
+                  type="button"
+                  onClick={() => setInvestmentToDelete(null)}
+                  className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleDeleteInvestment(investmentToDelete.id)}
+                  className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-xl font-black shadow-md shadow-rose-500/10 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                >
+                  Excluir Ativo
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* QUICK STATUS POPUP MENU */}
+      <AnimatePresence>
+        {statusMenuTx && statusMenuAnchor && (
+          <>
+            <div 
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => {
+                setStatusMenuTx(null);
+                setStatusMenuAnchor(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -5 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -5 }}
+              transition={{ duration: 0.12 }}
+              style={{ 
+                position: 'fixed',
+                top: Math.min(statusMenuAnchor.y + 12, window.innerHeight - 150),
+                left: Math.min(statusMenuAnchor.x - 70, window.innerWidth - 180),
+              }}
+              className="z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-40 overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-300"
+            >
+              <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                Alterar Status
+              </div>
+              <button
+                type="button"
+                onClick={() => handleQuickStatusChange(statusMenuTx, 'pago')}
+                className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                  statusMenuTx.status === 'pago' ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                {statusMenuTx.type === 'entrada' ? 'Recebido' : 'Pago'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickStatusChange(statusMenuTx, 'pendente')}
+                className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                  statusMenuTx.status === 'pendente' ? 'text-amber-500 dark:text-amber-405 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                Pendente
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickStatusChange(statusMenuTx, 'atrasado')}
+                className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                  statusMenuTx.status === 'atrasado' ? 'text-rose-600 dark:text-rose-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-rose-500" />
+                Atrasado
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickStatusChange(statusMenuTx, 'futuro')}
+                className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                  statusMenuTx.status === 'futuro' ? 'text-sky-600 dark:text-sky-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-sky-500" />
+                Futuro
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* QUICK TYPE POPUP MENU */}
+      <AnimatePresence>
+        {typeMenuTx && typeMenuAnchor && (
+          <>
+            <div 
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => {
+                setTypeMenuTx(null);
+                setTypeMenuAnchor(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -5 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -5 }}
+              transition={{ duration: 0.12 }}
+              style={{ 
+                position: 'fixed',
+                top: Math.min(typeMenuAnchor.y + 12, window.innerHeight - 150),
+                left: Math.min(typeMenuAnchor.x - 70, window.innerWidth - 180),
+              }}
+              className="z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-40 overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-300"
+            >
+              <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                Alterar Tipo
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  handleQuickFieldUpdate(typeMenuTx, 'type', 'entrada');
+                  setTypeMenuTx(null);
+                  setTypeMenuAnchor(null);
+                }}
+                className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                  typeMenuTx.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                Entrada
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleQuickFieldUpdate(typeMenuTx, 'type', 'saida');
+                  setTypeMenuTx(null);
+                  setTypeMenuAnchor(null);
+                }}
+                className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                  typeMenuTx.type === 'saida' ? 'text-rose-600 dark:text-rose-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-rose-500" />
+                Saída
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* QUICK CATEGORY POPUP MENU */}
+      <AnimatePresence>
+        {categoryMenuTx && categoryMenuAnchor && (
+          <>
+            <div 
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => {
+                setCategoryMenuTx(null);
+                setCategoryMenuAnchor(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -5 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -5 }}
+              transition={{ duration: 0.12 }}
+              style={{ 
+                position: 'fixed',
+                top: Math.min(categoryMenuAnchor.y + 12, window.innerHeight - 340),
+                left: Math.min(categoryMenuAnchor.x - 70, window.innerWidth - 200),
+              }}
+              className="z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-48 overflow-y-auto max-h-64 text-slate-900 dark:text-slate-100 transition-colors duration-300"
+            >
+              <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                Alterar Categoria
+              </div>
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    handleQuickFieldUpdate(categoryMenuTx, 'category', cat.id);
+                    setCategoryMenuTx(null);
+                    setCategoryMenuAnchor(null);
+                  }}
+                  className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer capitalize ${
+                    categoryMenuTx.category === cat.id ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                  {cat.name}
+                </button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* QUICK BANK POPUP MENU */}
+      <AnimatePresence>
+        {bankMenuTx && bankMenuAnchor && (
+          <>
+            <div 
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => {
+                setBankMenuTx(null);
+                setBankMenuAnchor(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -5 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -5 }}
+              transition={{ duration: 0.12 }}
+              style={{ 
+                position: 'fixed',
+                top: Math.min(bankMenuAnchor.y + 12, window.innerHeight - 280),
+                left: Math.min(bankMenuAnchor.x - 70, window.innerWidth - 180),
+              }}
+              className="z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-40 overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-300"
+            >
+              <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                Alterar Banco
+              </div>
+              {BANKS.map(bk => (
+                <button
+                  key={bk}
+                  type="button"
+                  onClick={() => {
+                    handleQuickFieldUpdate(bankMenuTx, 'bank', bk);
+                    setBankMenuTx(null);
+                    setBankMenuAnchor(null);
+                  }}
+                  className={`w-full px-3.5 py-2 text-xs font-semibold text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                    bankMenuTx.bank === bk ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  {bk}
+                </button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function CalendarView({ 
+  transactions, 
+  theme, 
+  onSelectTransaction 
+}: { 
+  transactions: any[], 
+  theme: 'light' | 'dark', 
+  onSelectTransaction: (t: any) => void 
+}) {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(monthStart);
+  const startDate = startOfWeek(monthStart);
+  const endDate = endOfWeek(monthEnd);
+
+  const calendarDays = eachDayOfInterval({
+    start: startDate,
+    end: endDate,
+  });
+
+  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+  const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+
+  const dayTransactions = selectedDate 
+    ? transactions.filter(t => isSameDay(parseISO(t.date), selectedDate))
+    : [];
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+    >
+      <div className="lg:col-span-2 space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors duration-300">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-xl font-bold dark:text-white capitalize">
+              {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
+            </h3>
+            <div className="flex gap-2">
+              <button 
+                onClick={prevMonth}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 transition-colors"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button 
+                onClick={nextMonth}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 transition-colors"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 mb-2">
+            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+              <div key={day} className="text-center text-xs font-bold text-slate-400 dark:text-slate-600 uppercase tracking-wider py-2">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-px bg-slate-100 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden">
+            {calendarDays.map((day, idx) => {
+              const hasIn = transactions.some(t => t.type === 'entrada' && isSameDay(parseISO(t.date), day));
+              const hasOut = transactions.some(t => t.type === 'saida' && isSameDay(parseISO(t.date), day));
+              const isSelected = selectedDate && isSameDay(day, selectedDate);
+              const isCurrentMonth = isSameMonth(day, monthStart);
+
+              return (
+                <div 
+                  key={idx}
+                  onClick={() => setSelectedDate(day)}
+                  className={`min-h-[100px] p-2 bg-white dark:bg-slate-900 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 relative ${
+                    !isCurrentMonth ? 'opacity-25 grayscale' : ''
+                  } ${isSelected ? 'ring-2 ring-inset ring-emerald-500 z-10' : ''}`}
+                >
+                  <span className={`text-sm font-semibold ${isSelected ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                    {format(day, 'd')}
+                  </span>
+                  
+                  <div className="mt-2 flex flex-col gap-1">
+                    {hasIn && (
+                      <div className="h-1.5 w-full bg-emerald-500/20 dark:bg-emerald-400/10 border-l-2 border-emerald-500 rounded-sm"></div>
+                    )}
+                    {hasOut && (
+                      <div className="h-1.5 w-full bg-rose-500/20 dark:bg-rose-400/10 border-l-2 border-rose-500 rounded-sm"></div>
+                    )}
+                  </div>
+
+                  {isSameDay(day, new Date()) && (
+                    <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-300 sticky top-8">
+          <div className="mb-6">
+            <h4 className="text-lg font-bold dark:text-white">Resumo do Dia</h4>
+            <p className="text-sm text-slate-500 dark:text-slate-400 capitalize">
+              {selectedDate ? format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR }) : 'Selecione um dia'}
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {dayTransactions.length > 0 ? (
+              dayTransactions.map(t => (
+                <div 
+                  key={t.id} 
+                  onClick={() => onSelectTransaction(t)}
+                  className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-805/50 dark:bg-slate-800/50 dark:hover:bg-slate-800 transition-all cursor-pointer border border-transparent hover:border-slate-105 hover:dark:border-slate-700/50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${t.type === 'entrada' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                      {t.type === 'entrada' ? <ArrowUpCircle size={16} /> : <ArrowDownCircle size={16} />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold dark:text-slate-200">{t.description}</p>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold">{t.category}</p>
+                    </div>
+                  </div>
+                  <p className={`text-sm font-black ${t.type === 'entrada' ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}`}>
+                    {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
+                <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-3">
+                  <Calendar size={32} className="text-slate-400" />
+                </div>
+                <p className="text-sm font-medium text-slate-500">Nenhuma movimentação neste dia</p>
+              </div>
+            )}
+          </div>
+          
+          {dayTransactions.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-slate-400 uppercase whitespace-nowrap">Saldo do Dia</span>
+                <span className={`text-lg font-black ${
+                  dayTransactions.reduce((acc, t) => acc + (t.type === 'entrada' ? t.value : -t.value), 0) >= 0 
+                    ? 'text-emerald-600' 
+                    : 'text-rose-600'
+                }`}>
+                  R$ {dayTransactions.reduce((acc, t) => acc + (t.type === 'entrada' ? t.value : -t.value), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}

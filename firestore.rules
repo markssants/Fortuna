@@ -1,0 +1,172 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Utilities
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Schema Validators
+    function isValidUser(data, userId) {
+      return data.uid == userId
+        && data.email is string
+        && data.email.size() <= 256;
+    }
+
+    function isValidTransaction(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.type is string
+        && (data.type == 'entrada' || data.type == 'saida')
+        && data.value is number
+        && data.date is string
+        && data.date.size() == 10
+        && data.category is string
+        && data.category.size() <= 128
+        && data.bank is string
+        && data.bank.size() <= 128
+        && data.method is string
+        && data.method.size() <= 128
+        && data.description is string
+        && data.description.size() <= 500
+        && data.essential is bool
+        && data.status is string
+        && (data.status == 'pago' || data.status == 'pendente' || data.status == 'atrasado' || data.status == 'futuro')
+        && data.recurring is bool
+        && data.userId == userId;
+    }
+
+    function isValidBudget(data, userId) {
+      return data.categoryId is string
+        && data.categoryId.size() <= 128
+        && data.limit is number
+        && data.userId == userId;
+    }
+
+    function isValidInvestment(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.value is number
+        && data.type is string
+        && data.type.size() <= 128
+        && data.userId == userId;
+    }
+
+    function isValidGoal(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.title is string
+        && data.title.size() <= 256
+        && data.target is number
+        && data.current is number
+        && data.deadline is string
+        && data.deadline.size() == 10
+        && data.category is string
+        && data.category.size() <= 128
+        && data.userId == userId;
+    }
+
+    function isValidVault(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.targetValue is number
+        && data.currentValue is number
+        && data.userId == userId;
+    }
+
+    function isValidRecorrente(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.value is number
+        && data.dueDate is int
+        && data.dueDate >= 1
+        && data.dueDate <= 31
+        && data.category is string
+        && data.status is string
+        && data.userId == userId;
+    }
+
+    // 4. Matches & Path Definitions
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming(), userId);
+      allow update: if isOwner(userId) && isValidUser(incoming(), userId);
+      allow delete: if isOwner(userId);
+
+      // Subcollection for Transactions
+      match /transactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(transactionId) && isValidTransaction(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(transactionId) && isValidTransaction(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(transactionId);
+      }
+
+      // Subcollection for Budgets
+      match /budgets/{categoryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(categoryId) && isValidBudget(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(categoryId) && isValidBudget(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(categoryId);
+      }
+
+      // Subcollection for Investments
+      match /investments/{investmentId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(investmentId) && isValidInvestment(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(investmentId) && isValidInvestment(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(investmentId);
+      }
+
+      // Subcollection for Goals
+      match /goals/{goalId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(goalId) && isValidGoal(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(goalId) && isValidGoal(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(goalId);
+      }
+
+      // Subcollection for Vaults
+      match /vaults/{vaultId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(vaultId) && isValidVault(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(vaultId) && isValidVault(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(vaultId);
+      }
+
+      // Subcollection for Recurrentes
+      match /recurrentes/{recorrenteId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(recorrenteId) && isValidRecorrente(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(recorrenteId) && isValidRecorrente(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(recorrenteId);
+      }
+    }
+  }
+}
