@@ -30,7 +30,7 @@ interface Goal {
   title: string;
   target: number;
   current: number;
-  deadline: string;
+  deadline?: string;
   category: string;
   userId?: string;
 }
@@ -38,17 +38,21 @@ interface Goal {
 interface MetasProps {
   goals: Goal[];
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
+  transactions: any[];
+  setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
   user: any;
   theme: 'light' | 'dark';
 }
 
-export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
+export default function Metas({ goals, setGoals, transactions, setTransactions, user, theme }: MetasProps) {
   const [isNewGoalModalOpen, setIsNewGoalModalOpen] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [updateAmount, setUpdateAmount] = useState('');
   const [updateType, setUpdateType] = useState<'add' | 'subtract'>('add');
   const [goalToDelete, setGoalToDelete] = useState<Goal | null>(null);
+  const [isExtratoOpen, setIsExtratoOpen] = useState(false);
+  const [goalForExtrato, setGoalForExtrato] = useState<Goal | null>(null);
 
   // Form states for new goal
   const [newTitle, setNewTitle] = useState('');
@@ -63,7 +67,7 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
 
   const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle || !newTarget || !newDeadline) return;
+    if (!newTitle || !newTarget) return;
 
     const targetVal = parseFloat(newTarget);
     const currentVal = parseFloat(newCurrent) || 0;
@@ -143,14 +147,37 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
     // Update state
     setGoals(prev => prev.map(g => g.id === selectedGoal.id ? updatedGoal : g));
 
+    const transactionId = `goal_tx_${Date.now()}`;
+    const date = new Date().toISOString().split('T')[0];
+    const goalTransaction = {
+      id: transactionId,
+      type: updateType === 'add' ? 'saida' : 'entrada',
+      value: amount,
+      date,
+      category: selectedGoal.category || 'outros',
+      bank: 'Cofre/Meta',
+      method: 'Lançamento Manual',
+      description: `${updateType === 'add' ? 'Aporte' : 'Resgate'} na Meta: ${selectedGoal.title}`,
+      essential: false,
+      status: 'pago',
+      recurring: false,
+      goalId: selectedGoal.id,
+      userId: user ? user.uid : 'demo'
+    };
+
     // Firestore sync
     const path = getGoalsPath();
     if (path) {
       try {
         await setDoc(doc(db, path, selectedGoal.id), updatedGoal);
+        const transactionPath = `users/${user.uid}/transactions`;
+        await setDoc(doc(db, transactionPath, transactionId), goalTransaction);
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `${path}/${selectedGoal.id}`);
       }
+    } else {
+      // Demo mode / local update
+      setTransactions(prev => [goalTransaction, ...prev]);
     }
 
     setIsUpdateModalOpen(false);
@@ -245,7 +272,11 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
               <motion.div
                 key={goal.id}
                 layout
-                className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-6 rounded-2xl shadow-sm flex flex-col justify-between relative group hover:shadow-md hover:border-slate-200 dark:hover:border-slate-700/80 transition-all duration-300"
+                onClick={() => {
+                  setGoalForExtrato(goal);
+                  setIsExtratoOpen(true);
+                }}
+                className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-6 rounded-2xl shadow-sm flex flex-col justify-between relative group hover:shadow-md hover:border-emerald-500/30 dark:hover:border-emerald-500/30 transition-all duration-300 cursor-pointer active:scale-[0.99]"
               >
                 {isCompleted && (
                   <div className="absolute top-3 right-3 bg-emerald-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs border border-emerald-400/20 z-10">
@@ -256,7 +287,7 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
                 <div className="space-y-4">
                   {/* Goal Header */}
                   <div className="flex items-start gap-3">
-                    <span className="text-3xl shrink-0 select-none bg-slate-50 dark:bg-slate-805/50 w-12 h-12 rounded-xl flex items-center justify-center border border-slate-100 dark:border-slate-800">
+                    <span className="text-3xl shrink-0 select-none bg-slate-50 dark:bg-slate-800/50 w-12 h-12 rounded-xl flex items-center justify-center border border-slate-100 dark:border-slate-800">
                       {emoji}
                     </span>
                     <div className="min-w-0 flex-1 pr-6">
@@ -281,7 +312,7 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
                     <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative">
                       <div 
                         className={`h-full rounded-full transition-all duration-550 ${
-                          isCompleted ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-emerald-600 to-teal-650'
+                          isCompleted ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-emerald-600 to-teal-600'
                         }`}
                         style={{ width: `${progressPercent}%` }}
                       />
@@ -306,20 +337,26 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
                   {/* Date and Details */}
                   <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-950/20 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                     <CalendarIcon size={12} className="text-slate-400" />
-                    <span>Prazo: {goal.deadline.split('-').reverse().join('/')}</span>
+                    <span>Prazo: {goal.deadline ? goal.deadline.split('-').reverse().join('/') : 'Sem prazo'}</span>
                   </div>
                 </div>
 
                 {/* Actions bottom dock */}
                 <div className="flex gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800/80">
                   <button
-                    onClick={() => handleOpenUpdateBalance(goal)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenUpdateBalance(goal);
+                    }}
                     className="flex-1 py-2 px-3 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <DollarSign size={13} /> Lançar Valor
                   </button>
                   <button
-                    onClick={() => setGoalToDelete(goal)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setGoalToDelete(goal);
+                    }}
                     className="p-2 border border-slate-150 dark:border-slate-800 text-slate-400 hover:text-rose-500 hover:border-rose-200 hover:bg-rose-50/50 dark:hover:bg-rose-950/10 rounded-xl transition-all cursor-pointer"
                     title="Excluir meta"
                   >
@@ -420,7 +457,6 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
                     <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Data Limite</label>
                     <input 
                       type="date"
-                      required
                       value={newDeadline}
                       onChange={(e) => setNewDeadline(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-medium"
@@ -539,7 +575,7 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
                     className={`flex-1 text-white py-3 rounded-xl font-black shadow-md transition-all text-xs cursor-pointer ${
                       updateType === 'add' 
                         ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/10' 
-                        : 'bg-rose-550 hover:bg-rose-500 shadow-rose-550/10'
+                        : 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/10'
                     }`}
                   >
                     Confirmar
@@ -574,7 +610,7 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
               
               <h3 className="text-lg font-black dark:text-white">Excluir Meta</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                Tem certeza de que deseja excluir a meta <strong className="text-slate-705 dark:text-slate-200 font-extrabold">"{goalToDelete.title}"</strong>? Esta ação não pode ser desfeita.
+                Tem certeza de que deseja excluir a meta <strong className="text-slate-700 dark:text-slate-200 font-extrabold">"{goalToDelete.title}"</strong>? Esta ação não pode ser desfeita.
               </p>
 
               <div className="flex gap-3 mt-6">
@@ -591,6 +627,110 @@ export default function Metas({ goals, setGoals, user, theme }: MetasProps) {
                   className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-xl font-black shadow-md shadow-rose-500/10 active:scale-[0.98] transition-all text-xs cursor-pointer"
                 >
                   Excluir Meta
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: EXTRATO DA META */}
+      <AnimatePresence>
+        {isExtratoOpen && goalForExtrato && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsExtratoOpen(false);
+                setGoalForExtrato(null);
+              }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300 max-h-[85vh] flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-950/20 rounded-xl flex items-center justify-center text-emerald-600 text-xl">
+                    {GOAL_CATEGORIES.find(c => c.id === goalForExtrato.category)?.emoji || '🎯'}
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black dark:text-white">Extrato da Meta</h3>
+                    <p className="text-[11px] text-slate-400 font-bold uppercase">{goalForExtrato.title}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsExtratoOpen(false);
+                    setGoalForExtrato(null);
+                  }} 
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 cursor-pointer"
+                >
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 pt-2 space-y-3">
+                {(() => {
+                  const goalTransactions = transactions
+                    .filter(tx => tx.goalId === goalForExtrato.id)
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                  if (goalTransactions.length === 0) {
+                    return (
+                      <div className="py-12 text-center">
+                        <p className="text-3xl mb-3">📋</p>
+                        <p className="text-sm text-slate-500 font-medium">Nenhum lançamento registrado nesta meta.</p>
+                      </div>
+                    );
+                  }
+
+                  return goalTransactions.map((tx) => (
+                    <div 
+                      key={tx.id} 
+                      className="p-4 bg-slate-50 dark:bg-slate-950/30 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${tx.type === 'entrada' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-500'}`}>
+                          {tx.type === 'entrada' ? <TrendingUp size={16} /> : <TrendingUp className="rotate-180" size={16} />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-black dark:text-white">{tx.description}</p>
+                          <p className="text-[10px] text-slate-400 font-bold">{new Date(tx.date).toLocaleDateString('pt-BR')}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-black ${tx.type === 'entrada' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {tx.type === 'entrada' ? '+' : '-'} R$ {tx.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">{tx.method}</p>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              <div className="p-6 bg-slate-50/50 dark:bg-slate-950/50 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Saldo Atual</p>
+                  <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+                    R$ {goalForExtrato.current.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsExtratoOpen(false);
+                    handleOpenUpdateBalance(goalForExtrato);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[11px] font-black shadow-lg shadow-emerald-500/20 cursor-pointer"
+                >
+                  Novo Lançamento
                 </button>
               </div>
             </motion.div>

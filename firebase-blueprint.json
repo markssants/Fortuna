@@ -168,7 +168,7 @@
           "description": "Owner userId"
         }
       },
-      "required": ["id", "title", "target", "current", "deadline", "category"]
+      "required": ["id", "title", "target", "current", "category", "userId"]
     },
     "vault": {
       "title": "Vault",
@@ -250,6 +250,19 @@
         }
       },
       "required": ["id", "name", "value", "dueDate", "category", "status", "userId"]
+    },
+    "vaultLog": {
+      "title": "Vault Log",
+      "description": "Transaction log for a vault",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["deposit", "withdraw", "create"] },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "type", "amount", "date"]
     }
   },
   "firestore": {
@@ -276,6 +289,10 @@
     "/users/{userId}/vaults/{vaultId}": {
       "schema": "vault",
       "description": "Per-user vaults/cofres records"
+    },
+    "/users/{userId}/vaults/{vaultId}/logs/{logId}": {
+      "schema": "vaultLog",
+      "description": "Transaction logs for a specific vault"
     },
     "/users/{userId}/recurrentes/{recorrenteId}": {
       "schema": "recorrente",

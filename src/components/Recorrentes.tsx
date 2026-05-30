@@ -192,7 +192,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <span className="p-2 bg-indigo-505/10 text-indigo-500 rounded-xl">🔁</span>
+            <span className="p-2 bg-indigo-500/10 text-indigo-500 rounded-xl">🔁</span>
             Gastos Recorrentes
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -257,19 +257,19 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
         <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-xl w-full md:w-auto font-bold shadow-xs">
           <button
             onClick={() => setFilterStatus('todos')}
-            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'todos' ? 'bg-white dark:bg-slate-850 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-850'}`}
+            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'todos' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             Todos
           </button>
           <button
             onClick={() => setFilterStatus('ativo')}
-            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'ativo' ? 'bg-white dark:bg-slate-850 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-850'}`}
+            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'ativo' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             Ativos
           </button>
           <button
             onClick={() => setFilterStatus('pausado')}
-            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'pausado' ? 'bg-white dark:bg-slate-850 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-850'}`}
+            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'pausado' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             Pausados
           </button>
@@ -280,7 +280,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'dueDate' | 'value')}
-            className="bg-slate-50 dark:bg-slate-950 text-slate-705 dark:text-slate-200 border border-slate-150 dark:border-slate-800 rounded-lg p-1.5 px-3 outline-none font-bold"
+            className="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-150 dark:border-slate-800 rounded-lg p-1.5 px-3 outline-none font-bold"
           >
             <option value="dueDate">Vencimento (Dia)</option>
             <option value="value">Valor (Maior)</option>
@@ -326,7 +326,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-3">
                       {/* Subscriptions visual indicator */}
-                      <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-850 flex items-center justify-center font-black shadow-3xs text-xl">
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 flex items-center justify-center font-black shadow-3xs text-xl">
                         {item.category === 'assinaturas' ? '📺' : '📦'}
                       </div>
                       <div>
@@ -364,7 +364,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                   </div>
 
                   {/* Financial displays */}
-                  <div className="mt-5 grid grid-cols-2 gap-2 border-t border-slate-50 dark:border-slate-850/80 pt-3">
+                  <div className="mt-5 grid grid-cols-2 gap-2 border-t border-slate-50 dark:border-slate-800/80 pt-3">
                     <div>
                       <p className="text-[9px] font-extrabold uppercase text-slate-400">Todo dia</p>
                       <p className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1 mt-0.5">
@@ -381,7 +381,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                 </div>
 
                 {/* Operations footer */}
-                <div className="mt-4 pt-3 border-t border-slate-50 dark:border-slate-850/40 flex items-center justify-between">
+                <div className="mt-4 pt-3 border-t border-slate-50 dark:border-slate-800/40 flex items-center justify-between">
                   <div>
                     <span className="text-[9px] font-extrabold uppercase text-slate-400 block -mb-0.5">Valor Mensal</span>
                     <span className="text-base font-black text-slate-900 dark:text-white">
@@ -442,7 +442,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                     placeholder="Ex: Netflix Premium, Academia, Energia"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-medium"
+                    className="w-full bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-500 transition-all font-medium"
                   />
                 </div>
 
@@ -506,7 +506,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                   <button 
                     type="button"
                     onClick={() => setIsNewModalOpen(false)}
-                    className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-500 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-850 text-xs cursor-pointer"
+                    className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-500 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 text-xs cursor-pointer"
                   >
                     Cancelar
                   </button>
@@ -546,7 +546,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
               
               <h3 className="text-lg font-black dark:text-white">Remover Recorrência</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                Tem certeza de que deseja excluir o gasto recorrente <strong className="text-slate-705 dark:text-slate-200 font-extrabold">"{recorrenteToDelete.name}"</strong>? Ele deixará de ser somado e monitorado no planejamento fixo mensal.
+                Tem certeza de que deseja excluir o gasto recorrente <strong className="text-slate-700 dark:text-slate-200 font-extrabold">"{recorrenteToDelete.name}"</strong>? Ele deixará de ser somado e monitorado no planejamento fixo mensal.
               </p>
 
               <div className="flex gap-3 mt-6">

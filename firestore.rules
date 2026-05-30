@@ -82,8 +82,7 @@ service cloud.firestore {
         && data.title.size() <= 256
         && data.target is number
         && data.current is number
-        && data.deadline is string
-        && data.deadline.size() == 10
+        && (data.deadline is string && (data.deadline == '' || data.deadline.size() == 10))
         && data.category is string
         && data.category.size() <= 128
         && data.userId == userId;
@@ -158,6 +157,12 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(vaultId) && isValidVault(incoming(), userId);
         allow update: if isOwner(userId) && isValidId(vaultId) && isValidVault(incoming(), userId);
         allow delete: if isOwner(userId) && isValidId(vaultId);
+
+        match /logs/{logId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) && isValidId(logId);
+          allow delete: if isOwner(userId) && isValidId(logId);
+        }
       }
 
       // Subcollection for Recurrentes

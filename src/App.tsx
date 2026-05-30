@@ -72,102 +72,13 @@ import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firesto
 import Metas from './components/Metas';
 import Cofre, { Vault } from './components/Cofre';
 import Recorrentes, { Recorrente } from './components/Recorrentes';
+import Orcamentos from './components/Orcamentos';
+import Investimentos from './components/Investimentos';
+import Transacoes from './components/Transacoes';
+import Calendario from './components/Calendario';
+import { CATEGORIES, getCategoryIconAndStyle, BANKS, formatDateDisplay, getStatusColorClasses } from './constants';
 
-const CATEGORIES = [
-  { id: 'alimentacao', name: 'Alimentação', color: '#10b981' },
-  { id: 'transporte', name: 'Transporte', color: '#3b82f6' },
-  { id: 'lazer', name: 'Lazer', color: '#f59e0b' },
-  { id: 'saude', name: 'Saúde', color: '#ef4444' },
-  { id: 'presentes', name: 'Presentes', color: '#ec4899' },
-  { id: 'moradia', name: 'Moradia', color: '#8b5cf6' },
-  { id: 'assinaturas', name: 'Assinaturas', color: '#06b6d4' },
-  { id: 'outros', name: 'Outros', color: '#64748b' },
-];
-
-const BANKS = ['Nubank', 'Itaú', 'Inter', 'Bradesco', 'Santander', 'Dinheiro'];
-
-const formatDateDisplay = (dateStr: string) => {
-  if (!dateStr) return '';
-  try {
-    const parsed = parseISO(dateStr);
-    const formatted = format(parsed, "d MMMM", { locale: ptBR });
-    const parts = formatted.split(' ');
-    if (parts.length === 2) {
-      const day = parts[0];
-      const month = parts[1];
-      const capitalizedMonth = month.charAt(0).toUpperCase() + month.slice(1);
-      return `${day} ${capitalizedMonth}`;
-    }
-    return formatted;
-  } catch (e) {
-    return dateStr;
-  }
-};
-
-const getCategoryIconAndStyle = (categoryId: string) => {
-  switch (categoryId) {
-    case 'alimentacao':
-      return {
-        icon: '🍔',
-        bg: 'bg-emerald-50 dark:bg-emerald-950/20',
-        text: 'text-lg'
-      };
-    case 'transporte':
-      return {
-        icon: '🚗',
-        bg: 'bg-blue-50 dark:bg-blue-950/20',
-        text: 'text-lg'
-      };
-    case 'lazer':
-      return {
-        icon: '🎉',
-        bg: 'bg-amber-50 dark:bg-amber-950/20',
-        text: 'text-lg'
-      };
-    case 'saude':
-      return {
-        icon: '🩺',
-        bg: 'bg-rose-50 dark:bg-rose-950/20',
-        text: 'text-lg'
-      };
-    case 'presentes':
-      return {
-        icon: '🎁',
-        bg: 'bg-pink-50 dark:bg-pink-950/20',
-        text: 'text-lg'
-      };
-    case 'moradia':
-      return {
-        icon: '🏠',
-        bg: 'bg-violet-50 dark:bg-violet-950/20',
-        text: 'text-lg'
-      };
-    case 'assinaturas':
-      return {
-        icon: '📺',
-        bg: 'bg-cyan-50 dark:bg-cyan-950/20',
-        text: 'text-lg'
-      };
-    case 'salario':
-      return {
-        icon: '💰',
-        bg: 'bg-teal-50 dark:bg-teal-950/20',
-        text: 'text-lg'
-      };
-    case 'outros':
-      return {
-        icon: '📝',
-        bg: 'bg-slate-50 dark:bg-slate-900/40',
-        text: 'text-lg'
-      };
-    default:
-      return {
-        icon: '❓',
-        bg: 'bg-slate-50 dark:bg-slate-900/40',
-        text: 'text-lg'
-      };
-  }
-};
+// Remove these as they are now in constants.ts
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -194,6 +105,9 @@ export default function App() {
     lazer: 300,
     saude: 200,
     presentes: 150,
+    moradia: 0,
+    assinaturas: 0,
+    outros: 0,
   });
 
   const [investments, setInvestments] = useState<any[]>([
@@ -250,72 +164,16 @@ export default function App() {
   const [inlineEdit, setInlineEdit] = useState<{ id: string; field: 'description' | 'value' | 'date' } | null>(null);
   const [inlineValue, setInlineValue] = useState<string>('');
 
-  const [typeFilter, setTypeFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
-  const [statusFilter, setStatusFilter] = useState<string>('todos');
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('todos');
-  const [bankFilter, setBankFilter] = useState<string>('todos');
-  const [categoryFilter, setCategoryFilter] = useState<string>('todos');
-  const [startDateFilter, setStartDateFilter] = useState<string>('');
-  const [endDateFilter, setEndDateFilter] = useState<string>('');
-  const [txSearchQuery, setTxSearchQuery] = useState<string>('');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(false);
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState<string | null>(null);
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
-      // 1. Type
-      if (typeFilter !== 'todos' && t.type !== typeFilter) return false;
-      // 2. Status
-      if (statusFilter !== 'todos' && t.status !== statusFilter) return false;
-      // 3. Payment Method
-      if (paymentMethodFilter !== 'todos' && t.method !== paymentMethodFilter) return false;
-      // 4. Bank
-      if (bankFilter !== 'todos' && t.bank !== bankFilter) return false;
-      // 5. Category
-      if (categoryFilter !== 'todos' && t.category !== categoryFilter) return false;
-      // 6. Dates
-      if (startDateFilter && t.date < startDateFilter) return false;
-      if (endDateFilter && t.date > endDateFilter) return false;
-      
-      // 7. Search
-      if (txSearchQuery.trim()) {
-        const q = txSearchQuery.toLowerCase();
-        const descMatches = t.description?.toLowerCase().includes(q);
-        const valFormatted = t.value?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }).toLowerCase();
-        const valStr = t.value?.toString().toLowerCase();
-        const valMatches = valStr?.includes(q) || valFormatted?.includes(q);
-        const bankMatches = t.bank?.toLowerCase().includes(q);
-        const catMatches = t.category?.toLowerCase().includes(q);
-        const methodMatches = t.method?.toLowerCase().includes(q);
-        const statusMatches = t.status?.toLowerCase().includes(q);
-        if (!descMatches && !valMatches && !bankMatches && !catMatches && !methodMatches && !statusMatches) return false;
-      }
-      return true;
-    });
-  }, [transactions, typeFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter, txSearchQuery]);
-
-  const activeFiltersCount = useMemo(() => {
-    return (statusFilter !== 'todos' ? 1 : 0) +
-           (paymentMethodFilter !== 'todos' ? 1 : 0) +
-           (bankFilter !== 'todos' ? 1 : 0) +
-           (categoryFilter !== 'todos' ? 1 : 0) +
-           (startDateFilter ? 1 : 0) +
-           (endDateFilter ? 1 : 0);
-  }, [statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter]);
-
-  const clearAllFilters = () => {
-    setStatusFilter('todos');
-    setPaymentMethodFilter('todos');
-    setBankFilter('todos');
-    setCategoryFilter('todos');
-    setStartDateFilter('');
-    setEndDateFilter('');
-    setTxSearchQuery('');
-    setTypeFilter('todos');
-  };
+  // States, useMemo filters, and clearAllFilters moved to Transacoes.tsx
 
   // Budgets and Investments states
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+  
+  // States moved to Transacoes.tsx:
+  // typeFilter, txSearchQuery, showAdvancedFilters, statusFilter, categoryFilter, bankFilter, paymentMethodFilter, startDateFilter, endDateFilter
+
   const [newBudget, setNewBudget] = useState({ categoryId: 'alimentacao', limit: '' });
   const [isInvestmentModalOpen, setIsInvestmentModalOpen] = useState(false);
   const [newInvestment, setNewInvestment] = useState({ name: '', value: '', type: 'Renda Fixa' });
@@ -364,30 +222,12 @@ export default function App() {
     // B. Live sync transactions
     const transactionsPath = `users/${user.uid}/transactions`;
     const unsubTransactions = onSnapshot(collection(db, transactionsPath), (snapshot) => {
-      if (snapshot.empty) {
-        // Seed default transactions if completely fresh Firebase database
-        const initialSeed = [
-          { id: '1', type: 'saida', value: 150.50, date: '2024-05-01', category: 'alimentacao', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Supermercado', essential: true, status: 'pago', recurring: false, userId: user.uid },
-          { id: '2', type: 'entrada', value: 5000.00, date: '2024-05-05', category: 'salario', bank: 'Itaú', method: 'PIX', description: 'Salário Mensal', essential: true, status: 'pago', recurring: true, userId: user.uid },
-          { id: '3', type: 'saida', value: 450.00, date: '2024-05-10', category: 'moradia', bank: 'Inter', method: 'Boleto', description: 'Condomínio', essential: true, status: 'atrasado', recurring: true, userId: user.uid },
-          { id: '4', type: 'saida', value: 29.90, date: '2024-05-12', category: 'assinaturas', bank: 'Nubank', method: 'Cartão de Crédito', description: 'Netflix', essential: false, status: 'pago', recurring: true, userId: user.uid },
-          { id: '5', type: 'saida', value: 120.00, date: '2024-05-15', category: 'transporte', bank: 'Nubank', method: 'PIX', description: 'Gasolina', essential: true, status: 'pago', recurring: false, userId: user.uid },
-        ];
-        initialSeed.forEach(async (t) => {
-          try {
-            await setDoc(doc(db, transactionsPath, t.id), t);
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `${transactionsPath}/${t.id}`);
-          }
-        });
-      } else {
-        const txs: any[] = [];
-        snapshot.forEach((d) => {
-          txs.push(d.data());
-        });
-        txs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setTransactions(txs);
-      }
+      const txs: any[] = [];
+      snapshot.forEach((d) => {
+        txs.push(d.data());
+      });
+      txs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setTransactions(txs);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, transactionsPath);
     });
@@ -395,33 +235,12 @@ export default function App() {
     // C. Live sync budgets
     const budgetsPath = `users/${user.uid}/budgets`;
     const unsubBudgets = onSnapshot(collection(db, budgetsPath), (snapshot) => {
-      if (snapshot.empty) {
-        const defaultBudgets: Record<string, number> = {
-          alimentacao: 800,
-          transporte: 400,
-          lazer: 300,
-          saude: 200,
-          presentes: 150,
-        };
-        Object.entries(defaultBudgets).forEach(async ([catId, limit]) => {
-          try {
-            await setDoc(doc(db, budgetsPath, catId), {
-              categoryId: catId,
-              limit,
-              userId: user.uid
-            });
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `${budgetsPath}/${catId}`);
-          }
-        });
-      } else {
-        const bdgs: Record<string, number> = {};
-        snapshot.forEach((d) => {
-          const data = d.data();
-          bdgs[data.categoryId] = data.limit;
-        });
-        setBudgets(bdgs);
-      }
+      const bdgs: Record<string, number> = {};
+      snapshot.forEach((d) => {
+        const data = d.data();
+        bdgs[data.categoryId] = data.limit;
+      });
+      setBudgets(bdgs);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, budgetsPath);
     });
@@ -429,25 +248,11 @@ export default function App() {
     // D. Live sync investments
     const investmentsPath = `users/${user.uid}/investments`;
     const unsubInvestments = onSnapshot(collection(db, investmentsPath), (snapshot) => {
-      if (snapshot.empty) {
-        const defaultInvestments = [
-          { id: '1', name: 'CDB Pós-Fixado', value: 10500.40, type: 'Renda Fixa', userId: user.uid },
-          { id: '2', name: 'Ações WEGE3', value: 2450.20, type: 'Ações', userId: user.uid },
-        ];
-        defaultInvestments.forEach(async (inv) => {
-          try {
-            await setDoc(doc(db, investmentsPath, inv.id), inv);
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `${investmentsPath}/${inv.id}`);
-          }
-        });
-      } else {
-        const invs: any[] = [];
-        snapshot.forEach((d) => {
-          invs.push(d.data());
-        });
-        setInvestments(invs);
-      }
+      const invs: any[] = [];
+      snapshot.forEach((d) => {
+        invs.push(d.data());
+      });
+      setInvestments(invs);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, investmentsPath);
     });
@@ -455,27 +260,13 @@ export default function App() {
     // E. Live sync goals
     const goalsPath = `users/${user.uid}/goals`;
     const unsubGoals = onSnapshot(collection(db, goalsPath), (snapshot) => {
-      if (snapshot.empty) {
-        const defaultGoals = [
-          { id: '1', title: 'Reserva de Emergência', target: 10000, current: 4500, deadline: '2400-12-31', category: 'reserva', userId: user.uid },
-          { id: '2', title: 'Viagem de Férias', target: 5000, current: 1500, deadline: '2026-12-25', category: 'viagem', userId: user.uid },
-        ];
-        defaultGoals.forEach(async (g) => {
-          try {
-            await setDoc(doc(db, goalsPath, g.id), g);
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `${goalsPath}/${g.id}`);
-          }
-        });
-      } else {
-        const gls: any[] = [];
-        snapshot.forEach((d) => {
-          gls.push(d.data());
-        });
-        // Sort goals so they stay in consistent order
-        gls.sort((a, b) => b.id.localeCompare(a.id));
-        setGoals(gls);
-      }
+      const gls: any[] = [];
+      snapshot.forEach((d) => {
+        gls.push(d.data());
+      });
+      // Sort goals so they stay in consistent order
+      gls.sort((a, b) => b.id.localeCompare(a.id));
+      setGoals(gls);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, goalsPath);
     });
@@ -483,26 +274,12 @@ export default function App() {
     // F. Live sync vaults
     const vaultsPath = `users/${user.uid}/vaults`;
     const unsubVaults = onSnapshot(collection(db, vaultsPath), (snapshot) => {
-      if (snapshot.empty) {
-        const defaultVaults: Vault[] = [
-          { id: '1', name: 'Reserva Especial', targetValue: 5000, currentValue: 1200, icon: '🛡️', userId: user.uid },
-          { id: '2', name: 'Viagem de Fim de Ano', targetValue: 3050, currentValue: 450, icon: '✈️', userId: user.uid }
-        ];
-        defaultVaults.forEach(async (v) => {
-          try {
-            await setDoc(doc(db, vaultsPath, v.id), v);
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `${vaultsPath}/${v.id}`);
-          }
-        });
-      } else {
-        const vts: Vault[] = [];
-        snapshot.forEach((d) => {
-          vts.push(d.data() as Vault);
-        });
-        vts.sort((a, b) => b.id.localeCompare(a.id));
-        setVaults(vts);
-      }
+      const vts: Vault[] = [];
+      snapshot.forEach((d) => {
+        vts.push(d.data() as Vault);
+      });
+      vts.sort((a, b) => b.id.localeCompare(a.id));
+      setVaults(vts);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, vaultsPath);
     });
@@ -510,27 +287,12 @@ export default function App() {
     // G. Live sync recurrentes
     const recurrentesPath = `users/${user.uid}/recurrentes`;
     const unsubRecurrentes = onSnapshot(collection(db, recurrentesPath), (snapshot) => {
-      if (snapshot.empty) {
-        const defaultRecurrentes: Recorrente[] = [
-          { id: '1', name: 'Netflix Premium', value: 55.90, dueDate: 10, category: 'assinaturas', status: 'ativo', bank: 'Nubank', userId: user.uid },
-          { id: '2', name: 'Academia', value: 110.00, dueDate: 5, category: 'lazer', status: 'ativo', bank: 'Itaú', userId: user.uid },
-          { id: '3', name: 'Aluguel', value: 1200.00, dueDate: 1, category: 'moradia', status: 'ativo', bank: 'Inter', userId: user.uid }
-        ];
-        defaultRecurrentes.forEach(async (r) => {
-          try {
-            await setDoc(doc(db, recurrentesPath, r.id), r);
-          } catch (e) {
-            handleFirestoreError(e, OperationType.WRITE, `${recurrentesPath}/${r.id}`);
-          }
-        });
-      } else {
-        const rts: Recorrente[] = [];
-        snapshot.forEach((d) => {
-          rts.push(d.data() as Recorrente);
-        });
-        rts.sort((a, b) => b.id.localeCompare(a.id));
-        setRecurrentes(rts);
-      }
+      const rts: Recorrente[] = [];
+      snapshot.forEach((d) => {
+        rts.push(d.data() as Recorrente);
+      });
+      rts.sort((a, b) => b.id.localeCompare(a.id));
+      setRecurrentes(rts);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, recurrentesPath);
     });
@@ -584,6 +346,9 @@ export default function App() {
         lazer: 300,
         saude: 200,
         presentes: 150,
+        moradia: 0,
+        assinaturas: 0,
+        outros: 0,
       });
       setInvestments([
         { id: '1', name: 'CDB Pós-Fixado', value: 10500.40, type: 'Renda Fixa' },
@@ -604,6 +369,31 @@ export default function App() {
       ]);
     } catch (error) {
       console.error("Logout failed: ", error);
+    }
+  };
+
+  const getStatusColorClasses = (status: string, isRow: boolean = false) => {
+    switch (status) {
+      case 'pago':
+        return isRow 
+          ? 'bg-emerald-50/30 dark:bg-emerald-500/5 hover:bg-emerald-100/50 dark:hover:bg-emerald-500/10' 
+          : 'bg-emerald-50/40 dark:bg-emerald-500/10 hover:bg-emerald-100/60 dark:hover:bg-emerald-500/20 shadow-sm shadow-emerald-100/50 dark:shadow-none';
+      case 'atrasado':
+        return isRow 
+          ? 'bg-rose-50/40 dark:bg-rose-500/5 hover:bg-rose-100/50 dark:hover:bg-rose-500/10' 
+          : 'bg-rose-50/60 dark:bg-rose-500/10 hover:bg-rose-100/80 dark:hover:bg-rose-500/20 shadow-sm shadow-rose-100/50 dark:shadow-none';
+      case 'pendente':
+        return isRow 
+          ? 'bg-amber-50/30 dark:bg-amber-500/5 hover:bg-amber-100/50 dark:hover:bg-amber-500/10' 
+          : 'bg-amber-50/40 dark:bg-amber-500/10 hover:bg-amber-100/60 dark:hover:bg-amber-500/20 shadow-sm shadow-amber-100/50 dark:shadow-none';
+      case 'futuro':
+        return isRow 
+          ? 'bg-sky-50/30 dark:bg-sky-500/5 hover:bg-sky-100/50 dark:hover:bg-sky-500/10' 
+          : 'bg-sky-50/40 dark:bg-sky-500/10 hover:bg-sky-100/60 dark:hover:bg-sky-500/20 shadow-sm shadow-sky-100/50 dark:shadow-none';
+      default:
+        return isRow 
+          ? 'hover:bg-slate-50 dark:hover:bg-slate-800/50' 
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800/50';
     }
   };
 
@@ -663,9 +453,117 @@ export default function App() {
     })).sort((a, b) => b.value - a.value);
   }, [transactions]);
 
+  const allCategoriesIncomesData = useMemo(() => {
+    const dataMap: Record<string, { name: string; value: number; color: string }> = {};
+    
+    // Initialize standard categories
+    CATEGORIES.forEach(cat => {
+      dataMap[cat.id] = {
+        name: cat.name,
+        value: 0,
+        color: cat.color
+      };
+    });
+    
+    // Aggregate transactions
+    transactions.forEach(t => {
+      if (t.type === 'entrada') {
+        const catId = (t.category || 'outros') as string;
+        const val = typeof t.value === 'number' ? t.value : parseFloat(t.value) || 0;
+        
+        if (dataMap[catId]) {
+          dataMap[catId].value += val;
+        } else {
+          const displayLabel = catId.charAt(0).toUpperCase() + catId.slice(1);
+          const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#06b6d4', '#4ade80', '#60a5fa', '#fcd34d', '#f87171'];
+          const stringUniqueHash = catId.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
+          const color = colors[stringUniqueHash % colors.length];
+          
+          dataMap[catId] = {
+            name: displayLabel,
+            value: val,
+            color: color
+          };
+        }
+      }
+    });
+    
+    return Object.entries(dataMap).map(([id, item]) => ({
+      id,
+      ...item
+    })).sort((a, b) => b.value - a.value);
+  }, [transactions]);
+
   const categoryExpensesData = useMemo(() => {
     return allCategoriesData.filter(d => d.value > 0);
   }, [allCategoriesData]);
+
+  const categoryIncomesData = useMemo(() => {
+    return allCategoriesIncomesData.filter(d => d.value > 0);
+  }, [allCategoriesIncomesData]);
+
+  const currentMonthName = useMemo(() => {
+    const month = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date());
+    return month.charAt(0).toUpperCase() + month.slice(1);
+  }, []);
+
+  const cashFlowData = useMemo(() => {
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    
+    const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const dailyNet: Record<number, number> = {};
+    
+    for (let i = 1; i <= lastDayOfMonth; i++) {
+      dailyNet[i] = 0;
+    }
+    
+    transactions.forEach(t => {
+      try {
+        const pkgDate = t.date.split('-');
+        if (pkgDate.length !== 3) return;
+        
+        const year = parseInt(pkgDate[0]);
+        const month = parseInt(pkgDate[1]) - 1;
+        const day = parseInt(pkgDate[2]);
+        
+        if (month === currentMonth && year === currentYear) {
+          const val = typeof t.value === 'number' ? t.value : parseFloat(t.value) || 0;
+          if (t.type === 'entrada') {
+            dailyNet[day] += val;
+          } else {
+            dailyNet[day] -= val;
+          }
+        }
+      } catch (e) {
+        console.error("Error parsing date for cash flow:", t.date);
+      }
+    });
+    
+    const data = [];
+    let cumulative = 0;
+    
+    // Determine how many days to show (up to today if current month)
+    const daysToShow = currentMonth === today.getMonth() && currentYear === today.getFullYear() 
+      ? today.getDate() 
+      : lastDayOfMonth;
+
+    for (let i = 1; i <= daysToShow; i++) {
+      cumulative += dailyNet[i];
+      data.push({
+        day: i.toString().padStart(2, '0'),
+        value: cumulative
+      });
+    }
+    
+    // If no data yet, show at least day 01 with 0
+    if (data.length === 0) {
+      data.push({ day: '01', value: 0 });
+    }
+    
+    return data;
+  }, [transactions]);
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -737,20 +635,47 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
+    const transactionToDelete = transactions.find(t => t.id === id);
+    
     if (user) {
       const path = `users/${user.uid}/transactions`;
       try {
         await deleteDoc(doc(db, path, id));
+        
+        // Update vault balance if linked
+        if (transactionToDelete?.vaultId) {
+          const vault = vaults.find(v => v.id === transactionToDelete.vaultId);
+          if (vault) {
+            const amount = transactionToDelete.value;
+            const logContrib = transactionToDelete.type === 'entrada' ? -amount : amount;
+            const updatedVault = { 
+              ...vault, 
+              currentValue: Math.max(0, vault.currentValue - logContrib) 
+            };
+            await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), updatedVault);
+          }
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `${path}/${id}`);
       }
     } else {
       setTransactions(transactions.filter(t => t.id !== id));
+      
+      // Local sync for vaults if in demo/local mode
+      if (transactionToDelete?.vaultId) {
+        const vault = vaults.find(v => v.id === transactionToDelete.vaultId);
+        if (vault) {
+          const amount = transactionToDelete.value;
+          const logContrib = transactionToDelete.type === 'entrada' ? -amount : amount;
+          setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue - logContrib) } : v));
+        }
+      }
     }
     setSelectedTransaction(null);
   };
 
   const handleUpdateTransaction = async (updatedTransaction: any) => {
+    const oldTransaction = transactions.find(t => t.id === updatedTransaction.id);
     const valFloat = parseFloat(updatedTransaction.value);
     const finalTransaction = {
       ...updatedTransaction,
@@ -761,11 +686,37 @@ export default function App() {
       const path = `users/${user.uid}/transactions`;
       try {
         await setDoc(doc(db, path, finalTransaction.id), finalTransaction);
+        
+        // Sync vault balance if linked
+        if (finalTransaction.vaultId) {
+          const vault = vaults.find(v => v.id === finalTransaction.vaultId);
+          if (vault && oldTransaction) {
+            const oldContrib = oldTransaction.type === 'entrada' ? -oldTransaction.value : oldTransaction.value;
+            const newContrib = finalTransaction.type === 'entrada' ? -finalTransaction.value : finalTransaction.value;
+            const diff = newContrib - oldContrib;
+            
+            const updatedVault = { 
+              ...vault, 
+              currentValue: Math.max(0, vault.currentValue + diff) 
+            };
+            await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), updatedVault);
+          }
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `${path}/${finalTransaction.id}`);
       }
     } else {
       setTransactions(transactions.map(t => t.id === finalTransaction.id ? finalTransaction : t));
+      
+      if (finalTransaction.vaultId) {
+        const vault = vaults.find(v => v.id === finalTransaction.vaultId);
+        if (vault && oldTransaction) {
+          const oldContrib = oldTransaction.type === 'entrada' ? -oldTransaction.value : oldTransaction.value;
+          const newContrib = finalTransaction.type === 'entrada' ? -finalTransaction.value : finalTransaction.value;
+          const diff = newContrib - oldContrib;
+          setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + diff) } : v));
+        }
+      }
     }
     setEditingTransaction(null);
     setSelectedTransaction(null);
@@ -798,11 +749,37 @@ export default function App() {
       const path = `users/${user.uid}/transactions`;
       try {
         await setDoc(doc(db, path, updated.id), updated);
+        
+        // Sync vault balance if linked and value/type changed
+        if (updated.vaultId && (field === 'value' || field === 'type')) {
+          const vault = vaults.find(v => v.id === updated.vaultId);
+          if (vault) {
+            const oldContrib = transaction.type === 'entrada' ? -transaction.value : transaction.value;
+            const newContrib = updated.type === 'entrada' ? -updated.value : updated.value;
+            const diff = newContrib - oldContrib;
+            
+            const updatedVault = { 
+              ...vault, 
+              currentValue: Math.max(0, vault.currentValue + diff) 
+            };
+            await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), updatedVault);
+          }
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `${path}/${updated.id}`);
       }
     } else {
       setTransactions(transactions.map(t => t.id === updated.id ? updated : t));
+      
+      if (updated.vaultId && (field === 'value' || field === 'type')) {
+        const vault = vaults.find(v => v.id === updated.vaultId);
+        if (vault) {
+          const oldContrib = transaction.type === 'entrada' ? -transaction.value : transaction.value;
+          const newContrib = updated.type === 'entrada' ? -updated.value : updated.value;
+          const diff = newContrib - oldContrib;
+          setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + diff) } : v));
+        }
+      }
     }
   };
 
@@ -952,9 +929,12 @@ export default function App() {
             <div className="bg-emerald-600 p-2 rounded-xl shrink-0 shadow-md shadow-emerald-500/10">
               <Wallet className="text-white" size={24} />
             </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-              For<span className="text-emerald-600">tuna</span>
-            </span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+                For<span className="text-emerald-600">tuna</span>
+              </span>
+              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase tracking-tighter border border-slate-200/50 dark:border-slate-800/50">V1.2</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
@@ -1163,17 +1143,20 @@ export default function App() {
           <div className="bg-emerald-600 p-2 rounded-lg shrink-0">
             <Wallet className="text-white" size={24} />
           </div>
-          <h1 className="text-xl font-bold tracking-tight dark:text-white">For<span className="text-emerald-600">tuna</span></h1>
+          <h1 className="text-xl font-bold tracking-tight dark:text-white flex items-baseline gap-2">
+            <span>For<span className="text-emerald-600">tuna</span></span>
+            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase tracking-tighter">V1.2</span>
+          </h1>
         </div>
         
         <nav className="flex-1 space-y-2">
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" id="dashboard" />
           <SidebarItem icon={List} label="Transações" id="transactions" />
           <SidebarItem icon={Target} label="Orçamentos" id="budgets" />
-          <SidebarItem icon={TrendingUp} label="Investimentos" id="investments" />
           <SidebarItem icon={Lock} label="Cofre" id="cofre" />
           <SidebarItem icon={Repeat} label="Recorrentes" id="recurrentes" />
           <SidebarItem icon={Trophy} label="Metas" id="goals" />
+          <SidebarItem icon={TrendingUp} label="Investimentos" id="investments" />
           <SidebarItem icon={Calendar} label="Calendário" id="calendar" />
         </nav>
 
@@ -1314,10 +1297,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Charts Section */}
+              {/* Charts Section: Pie Charts side-by-side */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-emerald-600" /> Gastos por Categoria</h3>
+                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-rose-500" /> Gastos por Categoria</h3>
                   
                   {categoryExpensesData.length === 0 ? (
                     <div className="h-64 flex flex-col items-center justify-center text-center p-4">
@@ -1359,11 +1342,10 @@ export default function App() {
                         </ResponsiveContainer>
                       </div>
 
-                      {/* Complete custom scrollable breakdown list of ALL categories */}
                       <div className="md:col-span-7 space-y-2 max-h-56 overflow-y-auto pr-1">
                         {(() => {
-                          const totalSpend = allCategoriesData.reduce((acc, curr) => acc + curr.value, 0);
-                          return allCategoriesData.map((item) => {
+                          const totalSpend = categoryExpensesData.reduce((acc, curr) => acc + curr.value, 0);
+                          return categoryExpensesData.map((item) => {
                             const percentage = totalSpend > 0 ? (item.value / totalSpend) * 100 : 0;
                             return (
                               <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
@@ -1376,7 +1358,7 @@ export default function App() {
                                     R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold w-10 shrink-0">
-                                    {percentage > 0 ? `${percentage.toFixed(1)}%` : '0%'}
+                                    {percentage.toFixed(1)}%
                                   </span>
                                 </div>
                               </div>
@@ -1389,468 +1371,129 @@ export default function App() {
                 </div>
 
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><TrendingUp size={18} className="text-emerald-600" /> Fluxo de Caixa (Maio)</h3>
+                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-emerald-600" /> Entradas por Categoria</h3>
+                  
+                  {categoryIncomesData.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-16 h-16 bg-slate-50 dark:bg-slate-850/50 rounded-full flex items-center justify-center mb-3 text-slate-400">
+                        <PieChartIcon size={28} />
+                      </div>
+                      <p className="font-bold text-sm text-slate-705 dark:text-slate-200">Nenhuma entrada registrada</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Adicione uma transação de entrada para gerar o gráfico.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                      <div className="h-56 md:col-span-5 flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={categoryIncomesData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={75}
+                              paddingAngle={4}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {categoryIncomesData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              contentStyle={{ 
+                                backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
+                                borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
+                                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                                borderRadius: '12px'
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div className="md:col-span-7 space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {(() => {
+                          const totalIncome = categoryIncomesData.reduce((acc, curr) => acc + curr.value, 0);
+                          return categoryIncomesData.map((item) => {
+                            const percentage = totalIncome > 0 ? (item.value / totalIncome) * 100 : 0;
+                            return (
+                              <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{item.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-right">
+                                  <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                                    R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold w-10 shrink-0">
+                                    {percentage.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Cash Flow and Recents side-by-side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><TrendingUp size={18} className="text-emerald-600" /> Fluxo de Caixa ({currentMonthName})</h3>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={[
-                        { day: '01', value: 200 },
-                        { day: '05', value: 5000 },
-                        { day: '10', value: 4500 },
-                        { day: '15', value: 4300 },
-                        { day: '20', value: 4100 },
-                      ]}>
+                      <LineChart data={cashFlowData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
                         <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
                         <YAxis hide />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', color: theme === 'dark' ? '#f8fafc' : '#0f172a' }}
+                          formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          contentStyle={{ 
+                            backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
+                            borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
+                            color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                            borderRadius: '12px'
+                          }}
                         />
                         <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-              </div>
 
-              {/* Recents */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden text-slate-900 dark:text-slate-100">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <h3 className="font-bold">Últimas Atividades</h3>
-                  <button onClick={() => setActiveTab('transactions')} className="text-emerald-600 text-sm font-semibold hover:underline">Ver todas</button>
-                </div>
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {transactions.slice(0, 5).map(t => (
-                    <div 
-                      key={t.id} 
-                      onClick={() => setSelectedTransaction(t)}
-                      className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setTypeMenuTx(t);
-                            setTypeMenuAnchor({ x: e.clientX, y: e.clientY });
-                          }}
-                          className={`p-2 rounded-xl shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500/50 hover:scale-105 active:scale-95 transition-all ${
-                            t.type === 'entrada' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
-                          }`}
-                          title="Clique para alterar tipo"
-                        >
-                          {t.type === 'entrada' ? <Plus size={20} /> : <Minus size={20} />}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            {inlineEdit?.id === t.id && inlineEdit?.field === 'description' ? (
-                              <input
-                                type="text"
-                                value={inlineValue}
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => setInlineValue(e.target.value)}
-                                onBlur={() => {
-                                  handleQuickFieldUpdate(t, 'description', inlineValue);
-                                  setInlineEdit(null);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleQuickFieldUpdate(t, 'description', inlineValue);
-                                    setInlineEdit(null);
-                                  } else if (e.key === 'Escape') {
-                                    setInlineEdit(null);
-                                  }
-                                }}
-                                className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-48"
-                              />
-                            ) : (
-                              <p 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setInlineEdit({ id: t.id, field: 'description' });
-                                  setInlineValue(t.description);
-                                }}
-                                className="font-semibold cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
-                                title="Clique para editar título"
-                              >
-                                {t.description}
-                              </p>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 mt-0.5">
-                            {inlineEdit?.id === t.id && inlineEdit?.field === 'date' ? (
-                              <input
-                                type="date"
-                                value={inlineValue}
-                                autoFocus
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => setInlineValue(e.target.value)}
-                                onBlur={() => {
-                                  handleQuickFieldUpdate(t, 'date', inlineValue);
-                                  setInlineEdit(null);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    handleQuickFieldUpdate(t, 'date', inlineValue);
-                                    setInlineEdit(null);
-                                  } else if (e.key === 'Escape') {
-                                    setInlineEdit(null);
-                                  }
-                                }}
-                                className="px-1 py-0.5 text-[10px] border-b border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none"
-                              />
-                            ) : (
-                              <span 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setInlineEdit({ id: t.id, field: 'date' });
-                                  setInlineValue(t.date);
-                                }}
-                                className="cursor-pointer hover:underline decoration-emerald-500/60"
-                                title="Mudar data"
-                              >
-                                {formatDateDisplay(t.date)}
-                              </span>
-                            )}
-                            <span>•</span>
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setBankMenuTx(t);
-                                setBankMenuAnchor({ x: e.clientX, y: e.clientY });
-                              }}
-                              className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-emerald-500/60 transition-colors"
-                              title="Alterar banco"
-                            >
-                              {t.bank}
-                            </span>
-                            <span>•</span>
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCategoryMenuTx(t);
-                                setCategoryMenuAnchor({ x: e.clientX, y: e.clientY });
-                              }}
-                              className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-emerald-500/60 transition-colors capitalize"
-                              title="Alterar categoria"
-                            >
-                              {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {inlineEdit?.id === t.id && inlineEdit?.field === 'value' ? (
-                          <input
-                            type="text"
-                            value={inlineValue}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => setInlineValue(e.target.value)}
-                            onBlur={() => {
-                              handleQuickFieldUpdate(t, 'value', inlineValue);
-                              setInlineEdit(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                handleQuickFieldUpdate(t, 'value', inlineValue);
-                                setInlineEdit(null);
-                              } else if (e.key === 'Escape') {
-                                setInlineEdit(null);
-                              }
-                            }}
-                            className="px-2 py-0.5 text-xs text-right font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-24 ml-auto block mb-1"
-                          />
-                        ) : (
-                          <p 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInlineEdit({ id: t.id, field: 'value' });
-                              setInlineValue(t.value.toString());
-                            }}
-                            className={`font-bold cursor-pointer hover:underline decoration-dotted decoration-emerald-500 ${t.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}
-                            title="Clique para editar valor"
-                          >
-                            {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </p>
-                        )}
-                        <span 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setStatusMenuTx(t);
-                            setStatusMenuAnchor({ x: e.clientX, y: e.clientY });
-                          }}
-                          className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
-                            t.status === 'atrasado' ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300' : 
-                            t.status === 'pago' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 
-                            t.status === 'futuro' ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-305' :
-                            'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                          }`}
-                        >
-                          {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : t.status === 'futuro' ? 'Futuro' : 'Pendente'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'transactions' && (
-            <motion.div 
-              key="transactions"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-6"
-            >
-              {/* ADVANCED FILTER SECTION */}
-              <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm transition-all duration-300">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h3 className="text-lg font-black dark:text-white">Listagem Completa</h3>
-                    
-                    {/* Segmented Type Filter */}
-                    <div className="flex bg-slate-100/50 dark:bg-slate-800/80 p-0.5 rounded-xl text-[10px] font-bold border border-slate-200/40 dark:border-slate-700/50 shadow-xs shrink-0 select-none backdrop-blur-sm">
-                      <button
-                        type="button"
-                        onClick={() => setTypeFilter(typeFilter === 'todos' ? 'todos' : 'todos')}
-                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${typeFilter === 'todos' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                      >
-                        Todos
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTypeFilter('entrada')}
-                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${typeFilter === 'entrada' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-emerald-500'}`}
-                      >
-                        <Plus size={10} /> Entradas
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTypeFilter('saida')}
-                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${typeFilter === 'saida' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-500 dark:text-slate-400 hover:text-rose-500'}`}
-                      >
-                        <Minus size={10} /> Saídas
-                      </button>
-                    </div>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden text-slate-900 dark:text-slate-100">
+                  <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <h3 className="font-bold">Últimas Atividades</h3>
+                    <button onClick={() => setActiveTab('transactions')} className="text-emerald-600 text-sm font-semibold hover:underline">Ver todas</button>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                    {/* Search Bar */}
-                    <div className="relative flex-1 lg:flex-initial min-w-[200px] lg:min-w-[285px]">
-                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 z-10" size={14} />
-                      <input
-                        type="text"
-                        placeholder="Buscar por descrição, valor ou banco..."
-                        value={txSearchQuery}
-                        onChange={(e) => setTxSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-9 py-2.5 bg-slate-100/50 hover:bg-slate-100/80 dark:bg-slate-800/70 dark:hover:bg-slate-800/90 border border-slate-200/50 dark:border-slate-700/50 rounded-2xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:text-slate-200 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 backdrop-blur-sm relative"
-                      />
-                      {txSearchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setTxSearchQuery('')}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-400 hover:text-slate-600 transition-colors z-10"
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Advanced Filters Toggle Button */}
-                    <button
-                      type="button"
-                      onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
-                      className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold border flex items-center gap-2 cursor-pointer transition-all ${
-                        showAdvancedFilters || activeFiltersCount > 0
-                          ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/50'
-                          : 'bg-slate-100/50 hover:bg-slate-100/80 dark:bg-slate-800/80 dark:hover:bg-slate-800/80 border border-slate-200/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-300 backdrop-blur-sm'
-                      }`}
-                    >
-                      <Filter size={13} />
-                      Filtros
-                      {activeFiltersCount > 0 && (
-                        <span className="bg-emerald-500 text-white rounded-full text-[10px] px-1.5 py-0.5 font-black scale-90 leading-none">
-                          {activeFiltersCount}
-                        </span>
-                      )}
-                      {showAdvancedFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-
-                    {/* Clear Filters Button */}
-                    {(activeFiltersCount > 0 || typeFilter !== 'todos') && (
-                      <button
-                        type="button"
-                        onClick={clearAllFilters}
-                        className="px-3 py-2.5 rounded-2xl text-xs font-bold border border-dashed text-rose-500 hover:text-rose-600 dark:text-rose-455 dark:hover:text-rose-400 border-rose-200 hover:border-rose-350 dark:border-rose-900/40 hover:dark:border-rose-800 transition-all flex items-center gap-1 hover:bg-rose-50/20"
-                        title="Limpar todos os filtros"
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[400px] overflow-y-auto">
+                    {transactions.slice(0, 8).map(t => (
+                      <div 
+                        key={t.id} 
+                        onClick={() => setSelectedTransaction(t)}
+                        className={`p-4 flex items-center justify-between transition-all duration-300 cursor-pointer ${getStatusColorClasses(t.status)}`}
                       >
-                        <X size={12} />
-                        Limpar
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Collapsible Advanced Filters Panel */}
-                <AnimatePresence>
-                  {showAdvancedFilters && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                      animate={{ height: 'auto', opacity: 1, marginTop: 16 }}
-                      exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                      className="overflow-hidden border-t border-slate-100 dark:border-slate-800/60 pt-4"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5">
-                        {/* Filter Status */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Status</label>
-                          <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
-                          >
-                            <option value="todos" className="dark:bg-slate-900">Todos Status</option>
-                            <option value="pago" className="dark:bg-slate-900">Pago</option>
-                            <option value="pendente" className="dark:bg-slate-900">Pendente</option>
-                            <option value="atrasado" className="dark:bg-slate-900">Atrasado</option>
-                            <option value="futuro" className="dark:bg-slate-900">Futuro</option>
-                          </select>
-                        </div>
-
-                        {/* Filter Categoria */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Categoria</label>
-                          <select
-                            value={categoryFilter}
-                            onChange={(e) => setCategoryFilter(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer capitalize transition-all backdrop-blur-md"
-                          >
-                            <option value="todos" className="dark:bg-slate-900">Todas Categorias</option>
-                            {CATEGORIES.map(c => (
-                              <option key={c.id} value={c.id} className="dark:bg-slate-900">{c.name}</option>
-                            ))}
-                            <option value="salario" className="dark:bg-slate-900">Salário</option>
-                          </select>
-                        </div>
-
-                        {/* Filter Banco */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Banco</label>
-                          <select
-                            value={bankFilter}
-                            onChange={(e) => setBankFilter(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
-                          >
-                            <option value="todos" className="dark:bg-slate-900">Todos Bancos</option>
-                            {BANKS.map(b => (
-                              <option key={b} value={b} className="dark:bg-slate-900">{b}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Filter Método */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Método</label>
-                          <select
-                            value={paymentMethodFilter}
-                            onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
-                          >
-                            <option value="todos" className="dark:bg-slate-900">Todos Métodos</option>
-                            {['PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Boleto', 'Dinheiro', 'Transferência'].map(m => (
-                              <option key={m} value={m} className="dark:bg-slate-900">{m}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Filter Data Inicial */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Data Inicial</label>
-                          <input
-                            type="date"
-                            value={startDateFilter}
-                            onChange={(e) => setStartDateFilter(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
-                          />
-                        </div>
-
-                        {/* Filter Data Final */}
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Data Final</label>
-                          <input
-                            type="date"
-                            value={endDateFilter}
-                            onChange={(e) => setEndDateFilter(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer transition-all backdrop-blur-md"
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* LIST CONTAINER */}
-              <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-xs border border-slate-100 dark:border-slate-800 overflow-hidden relative">
-                {filteredTransactions.length === 0 ? (
-                  <div className="p-16 text-center text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center gap-2">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-full text-slate-400 dark:text-slate-500 mb-2">
-                      <Filter size={32} />
-                    </div>
-                    <h4 className="font-bold text-slate-700 dark:text-slate-350">Nenhuma transação encontrada</h4>
-                    <p className="text-xs text-slate-450 dark:text-slate-500 max-w-sm leading-relaxed">Não encontramos transações correspondentes aos filtros aplicados. Tente limpar os filtros selecionados.</p>
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      className="mt-4 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl active:scale-95 transition-all cursor-pointer shadow-md"
-                    >
-                      Limpar Filtros
-                    </button>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-55 dark:bg-slate-905 border-b border-slate-100 dark:border-slate-800/80">
-                          <th className="p-4 pl-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Tipo</th>
-                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Descrição</th>
-                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-left">Valor</th>
-                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Data</th>
-                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Categoria</th>
-                          <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Banco</th>
-                          <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                        {filteredTransactions.map(t => (
-                          <tr 
-                            key={t.id} 
-                            onClick={() => setSelectedTransaction(t)}
-                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-                          >
-                        <td className="p-4">
-                          <span 
+                        <div className="flex items-center gap-4">
+                          <div 
                             onClick={(e) => {
                               e.stopPropagation();
                               setTypeMenuTx(t);
                               setTypeMenuAnchor({ x: e.clientX, y: e.clientY });
                             }}
-                            className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase whitespace-nowrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
-                              t.type === 'entrada' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300'
+                            className={`p-2 rounded-xl shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500/50 hover:scale-105 active:scale-95 transition-all ${
+                              t.type === 'entrada' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
                             }`}
-                            title="Trocar tipo de transação"
                           >
-                            {t.type === 'entrada' ? 'Entrada' : 'Saída'}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <span className="text-xl shrink-0 select-none" title={CATEGORIES.find(c => c.id === t.category)?.name || t.category}>
-                              {getCategoryIconAndStyle(t.category).icon}
-                            </span>
-                            <div className="flex flex-col">
+                            {t.type === 'entrada' ? <Plus size={20} /> : <Minus size={20} />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
                               {inlineEdit?.id === t.id && inlineEdit?.field === 'description' ? (
                                 <input
                                   type="text"
@@ -1866,388 +1509,145 @@ export default function App() {
                                     if (e.key === 'Enter') {
                                       handleQuickFieldUpdate(t, 'description', inlineValue);
                                       setInlineEdit(null);
-                                    } else if (e.key === 'Escape') {
-                                      setInlineEdit(null);
                                     }
                                   }}
-                                  className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-48 animate-fade-in"
+                                  className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-48"
                                 />
                               ) : (
-                                <span 
+                                <p 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setInlineEdit({ id: t.id, field: 'description' });
                                     setInlineValue(t.description);
                                   }}
-                                  className="font-semibold dark:text-slate-200 cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
-                                  title="Clique para editar descrição"
+                                  className="font-semibold cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80 flex items-center gap-2"
                                 >
                                   {t.description}
+                                  {t.vaultId && (
+                                    <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter border border-indigo-200/50 dark:border-indigo-800/50 shrink-0">
+                                      Cofre
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 mt-0.5">
+                              {inlineEdit?.id === t.id && inlineEdit?.field === 'date' ? (
+                                <input
+                                  type="date"
+                                  value={inlineValue}
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => setInlineValue(e.target.value)}
+                                  onBlur={() => {
+                                    handleQuickFieldUpdate(t, 'date', inlineValue);
+                                    setInlineEdit(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      handleQuickFieldUpdate(t, 'date', inlineValue);
+                                      setInlineEdit(null);
+                                    }
+                                  }}
+                                  className="px-1 py-0.5 text-[10px] border-b border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none"
+                                />
+                              ) : (
+                                <span 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInlineEdit({ id: t.id, field: 'date' });
+                                    setInlineValue(t.date);
+                                  }}
+                                  className="cursor-pointer hover:underline decoration-emerald-500/60"
+                                >
+                                  {formatDateDisplay(t.date)}
                                 </span>
                               )}
-                              <span className="text-[10px] text-slate-400 uppercase tracking-tighter">{t.method}</span>
-                            </div>
+                              <span>•</span>
+                              <span 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCategoryMenuTx(t);
+                                  setCategoryMenuAnchor({ x: e.clientX, y: e.clientY });
+                                }}
+                                className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-emerald-500/60 transition-colors capitalize"
+                              >
+                                {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
+                              </span>
+                            </p>
                           </div>
-                        </td>
-                        <td className={`p-4 text-sm font-bold text-left whitespace-nowrap ${t.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                          {inlineEdit?.id === t.id && inlineEdit?.field === 'value' ? (
-                            <input
-                              type="text"
-                              value={inlineValue}
-                              autoFocus
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => setInlineValue(e.target.value)}
-                              onBlur={() => {
-                                handleQuickFieldUpdate(t, 'value', inlineValue);
-                                setInlineEdit(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleQuickFieldUpdate(t, 'value', inlineValue);
-                                  setInlineEdit(null);
-                                } else if (e.key === 'Escape') {
-                                  setInlineEdit(null);
-                                }
-                              }}
-                              className="px-2 py-0.5 text-xs text-left font-bold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-24"
-                            />
-                          ) : (
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInlineEdit({ id: t.id, field: 'value' });
-                                setInlineValue(t.value.toString());
-                              }}
-                              className="cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
-                              title="Clique para editar valor"
-                            >
-                              R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                          {inlineEdit?.id === t.id && inlineEdit?.field === 'date' ? (
-                            <input
-                              type="date"
-                              value={inlineValue}
-                              autoFocus
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => setInlineValue(e.target.value)}
-                              onBlur={() => {
-                                handleQuickFieldUpdate(t, 'date', inlineValue);
-                                setInlineEdit(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleQuickFieldUpdate(t, 'date', inlineValue);
-                                  setInlineEdit(null);
-                                } else if (e.key === 'Escape') {
-                                  setInlineEdit(null);
-                                }
-                              }}
-                              className="px-1.5 py-0.5 text-xs border-b border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none"
-                            />
-                          ) : (
-                            <span 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setInlineEdit({ id: t.id, field: 'date' });
-                                setInlineValue(t.date);
-                              }}
-                              className="cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80"
-                              title="Alterar data"
-                            >
-                              {formatDateDisplay(t.date)}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <span 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setCategoryMenuTx(t);
-                              setCategoryMenuAnchor({ x: e.clientX, y: e.clientY });
-                            }}
-                            className="px-2 py-1 bg-slate-100/60 dark:bg-slate-800/60 hover:bg-slate-200/60 dark:hover:bg-slate-700/70 rounded text-xs font-semibold text-slate-600 dark:text-slate-400 capitalize cursor-pointer hover:ring-2 hover:ring-emerald-500/30 transition-all whitespace-nowrap"
-                            title="Mudar categoria"
-                          >
-                            {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
-                          </span>
-                        </td>
-                        <td className="p-4 text-sm font-medium whitespace-nowrap dark:text-slate-300">
-                          <span 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setBankMenuTx(t);
-                              setBankMenuAnchor({ x: e.clientX, y: e.clientY });
-                            }}
-                            className="cursor-pointer hover:text-emerald-500 hover:underline px-1.5 py-1 rounded transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
-                            title="Alterar banco"
-                          >
-                            {t.bank}
-                          </span>
-                        </td>
-                        <td className="p-4 text-center">
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-bold ${t.type === 'entrada' ? 'text-emerald-600' : 'text-slate-900 dark:text-slate-100'}`}>
+                            {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
                           <span 
                             onClick={(e) => {
                               e.stopPropagation();
                               setStatusMenuTx(t);
                               setStatusMenuAnchor({ x: e.clientX, y: e.clientY });
                             }}
-                            className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase whitespace-nowrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
+                            className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
                               t.status === 'atrasado' ? 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300' : 
                               t.status === 'pago' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 
-                              t.status === 'futuro' ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-305' :
-                              'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                              'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300'
                             }`}
                           >
-                            {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : t.status === 'futuro' ? 'Futuro' : 'Pendente'}
+                            {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : 'Pendente'}
                           </span>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-
-          {activeTab === 'budgets' && (
-            <motion.div 
-              key="budgets"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-xl font-bold dark:text-white">Meus Limites de Gastos</h3>
-                  <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">
-                    Meta de economia: <span className="font-bold text-emerald-600 dark:text-emerald-400">20%</span>
-                  </p>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setIsBudgetModalOpen(true)}
-                  className="px-4 py-2 bg-slate-900 border border-transparent hover:bg-slate-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-98 shadow-sm"
-                >
-                  <Plus size={14} /> Novo Limite
-                </button>
               </div>
-              
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                 {Object.entries(budgets).map(([catId, limit]) => {
-                   const category = CATEGORIES.find(c => c.id === catId);
-                   const numLimit = limit as number;
-                   const spent = transactions
-                     .filter(t => t.type === 'saida' && t.category === catId)
-                     .reduce((acc, curr) => acc + curr.value, 0);
-                   const percent = Math.min((spent / numLimit) * 100, 100);
-                   
-                   return (
-                     <div 
-                       key={catId} 
-                       onClick={() => setSelectedBudgetCategory(catId)}
-                       className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:border-slate-200 dark:hover:border-slate-700/80 hover:shadow-md transition-all duration-300 active:scale-[0.99] group relative overflow-hidden"
-                     >
-                       {/* Subtle accent hover backdrop glow */}
-                       <div className="absolute inset-0 bg-slate-50/50 dark:bg-slate-800/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
-                       
-                       <div className="flex justify-between items-center mb-4 relative z-10">
-                         <div className="flex items-center gap-3">
-                           {(() => {
-                             const info = getCategoryIconAndStyle(catId);
-                             return (
-                               <div className={`w-10 h-10 rounded-xl ${info.bg} flex items-center justify-center text-lg shadow-sm group-hover:scale-110 transition-transform duration-300`}>
-                                 {info.icon}
-                               </div>
-                             );
-                           })()}
-                           <span className="font-bold text-lg dark:text-slate-100">{category?.name || catId}</span>
-                         </div>
-                         <div className="text-right">
-                           <span className="text-slate-400 dark:text-slate-500 text-xs block">Limite: R$ {numLimit}</span>
-                           <span className="text-emerald-500 dark:text-emerald-400 text-[10px] font-bold tracking-wider group-hover:translate-x-1 block mt-0.5 transition-transform duration-200">VER EXTRATO ➔</span>
-                         </div>
-                       </div>
-                       
-                       <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-4 relative z-10">
-                         <div 
-                           className={`h-full transition-all duration-500 ${percent > 90 ? 'bg-rose-500' : percent > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                           style={{ width: `${percent}%` }}
-                         ></div>
-                       </div>
-                       
-                       <div className="flex justify-between items-end relative z-10">
-                         <div>
-                           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Gasto</p>
-                           <p className="text-xl font-black dark:text-white-850 dark:text-white">R$ {spent.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                         </div>
-                         <div className="text-right">
-                           <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Restante</p>
-                           <p className={`font-bold ${numLimit - spent < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                             R$ {(numLimit - spent).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                           </p>
-                         </div>
-                       </div>
-                     </div>
-                   );
-                 })}
-               </div>
             </motion.div>
           )}
 
+          {activeTab === 'transactions' && (
+            <Transacoes
+              transactions={transactions}
+              setSelectedTransaction={setSelectedTransaction}
+              setTypeMenuTx={setTypeMenuTx}
+              setTypeMenuAnchor={setTypeMenuAnchor}
+              setCategoryMenuTx={setCategoryMenuTx}
+              setCategoryMenuAnchor={setCategoryMenuAnchor}
+              setBankMenuTx={setBankMenuTx}
+              setBankMenuAnchor={setBankMenuAnchor}
+              setStatusMenuTx={setStatusMenuTx}
+              setStatusMenuAnchor={setStatusMenuAnchor}
+              handleQuickFieldUpdate={handleQuickFieldUpdate}
+              inlineEdit={inlineEdit}
+              setInlineEdit={setInlineEdit}
+              inlineValue={inlineValue}
+              setInlineValue={setInlineValue}
+            />
+          )}
+
+          {activeTab === 'budgets' && (
+            <Orcamentos 
+              budgets={budgets}
+              transactions={transactions}
+              setIsBudgetModalOpen={setIsBudgetModalOpen}
+              setSelectedBudgetCategory={setSelectedBudgetCategory}
+            />
+          )}
+
            {activeTab === 'investments' && (
-             <motion.div 
-               key="investments"
-               initial={{ opacity: 0, y: 10 }}
-               animate={{ opacity: 1, y: 0 }}
-               exit={{ opacity: 0, y: -10 }}
-               className="space-y-6"
-             >
-                <div className="bg-gradient-to-br from-slate-900 to-slate-800 dark:from-slate-950 dark:to-slate-900 text-white p-8 rounded-3xl relative overflow-hidden shadow-2xl">
-                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                     <div>
-                       <p className="text-slate-400 font-medium mb-1">Patrimônio Investido</p>
-                       <h3 className="text-4xl font-black mb-4">
-                         R$ {investments.reduce((acc, curr) => acc + curr.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                       </h3>
-                       <div className="flex gap-4">
-                         <span className="flex items-center gap-1 text-emerald-400 text-sm font-bold bg-white/10 px-3 py-1 rounded-full border border-white/10">
-                           <TrendingUp size={14} /> +4.2% esse mês
-                         </span>
-                       </div>
-                     </div>
-                     <button
-                       onClick={() => setIsInvestmentModalOpen(true)}
-                       className="self-start sm:self-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-505 dark:bg-emerald-650 dark:hover:bg-emerald-600 text-white text-xs font-extrabold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-98 shadow-md"
-                     >
-                       <Plus size={15} /> Novo Investimento
-                     </button>
-                   </div>
-                   <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
-                     <TrendingUp size={160} />
-                   </div>
-                </div>
- 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                   <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6">
-                     <h4 className="font-bold mb-4 dark:text-white">Ativos na Carteira</h4>
-                     {investments.length === 0 ? (
-                       <div className="text-center py-12 text-slate-400 dark:text-slate-550">
-                         <p className="text-3xl mb-2">📈</p>
-                         <p className="text-sm font-semibold">Nenhum investimento registrado ainda.</p>
-                       </div>
-                     ) : (
-                       <div className="space-y-4">
-                         {investments.map((inv, index) => (
-                           <div key={inv.id || index} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl transition-all group/row hover:bg-slate-100/50 dark:hover:bg-slate-805/50 border border-slate-100/30 dark:border-slate-800/30">
-                             <div className="flex items-center gap-3">
-                               <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                                 <Building2 size={18} className="text-slate-600 dark:text-slate-400" />
-                               </div>
-                               <div>
-                                 <p className="font-bold dark:text-slate-100">{inv.name}</p>
-                                 <p className="text-xs text-slate-400 dark:text-slate-500">{inv.type}</p>
-                               </div>
-                             </div>
-                             <div className="flex items-center gap-4">
-                               <p className="font-bold text-slate-900 dark:text-white">R$ {inv.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                               <button
-                                 onClick={() => setInvestmentToDelete(inv)}
-                                 className="p-1 px-2 text-slate-400 hover:text-rose-500 dark:hover:text-rose-450 md:opacity-0 group-hover/row:opacity-100 focus:opacity-100 transition-opacity rounded cursor-pointer"
-                                 title="Excluir Ativo"
-                               >
-                                 <Trash2 size={14} />
-                               </button>
-                             </div>
-                           </div>
-                         ))}
-                       </div>
-                     )}
-                   </div>
- 
-                   <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 flex flex-col items-center">
-                     <h4 className="font-bold mb-4 text-center dark:text-white">Diversificação</h4>
-                     {investments.length === 0 ? (
-                       <div className="flex items-center justify-center flex-1 py-12 text-slate-350 dark:text-slate-600">
-                         <p className="text-sm italic">Adicione ativos para ver o gráfico.</p>
-                       </div>
-                     ) : (() => {
-                       const totalInvested = investments.reduce((acc, curr) => acc + curr.value, 0);
-                       const distributionEntries = Object.entries(
-                         investments.reduce((acc: Record<string, number>, curr) => {
-                           acc[curr.type] = (acc[curr.type] || 0) + curr.value;
-                           return acc;
-                         }, {})
-                       ).map(([name, value]) => ({
-                         name,
-                         value: value as number,
-                         percentage: totalInvested > 0 ? ((value as number) / totalInvested) * 100 : 0
-                       }));
-
-                       const getPieColor = (type: string, idx: number) => {
-                         const mapColors: Record<string, string> = {
-                           'Renda Fixa': '#10b981',
-                           'Ações': '#3b82f6',
-                           'Fundos Imobiliários': '#f59e0b',
-                           'Previdência': '#8b5cf6',
-                           'Criptomoedas': '#ec4899',
-                           'Outros': '#6366f1'
-                         };
-                         return mapColors[type] || ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1'][idx % 6];
-                       };
-
-                       return (
-                         <>
-                           <div className="h-48 w-full">
-                             <ResponsiveContainer width="100%" height="100%">
-                               <PieChart>
-                                 <Pie
-                                   data={distributionEntries}
-                                   cx="50%"
-                                   cy="50%"
-                                   innerRadius={45}
-                                   outerRadius={65}
-                                   dataKey="value"
-                                   stroke="none"
-                                 >
-                                   {distributionEntries.map((entry, idx) => (
-                                     <Cell key={`cell-${idx}`} fill={getPieColor(entry.name, idx)} />
-                                   ))}
-                                 </Pie>
-                                 <Tooltip 
-                                   formatter={(value: any) => `R$ ${parseFloat(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
-                                   contentStyle={{ backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', color: theme === 'dark' ? '#f8fafc' : '#0f172a' }}
-                                 />
-                               </PieChart>
-                             </ResponsiveContainer>
-                           </div>
-                           <div className="mt-4 w-full space-y-2">
-                             {distributionEntries.map((entry, idx) => (
-                               <div key={entry.name} className="flex justify-between text-xs items-center">
-                                 <span className="flex items-center gap-1.5 dark:text-slate-400">
-                                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getPieColor(entry.name, idx) }}></div> 
-                                   {entry.name}
-                                 </span>
-                                 <span className="font-bold dark:text-slate-200">{entry.percentage.toFixed(1)}%</span>
-                               </div>
-                             ))}
-                           </div>
-                         </>
-                       );
-                     })()}
-                   </div>
-                </div>
-             </motion.div>
-           )}
+            <Investimentos 
+              investments={investments}
+              setIsInvestmentModalOpen={setIsInvestmentModalOpen}
+              setInvestmentToDelete={setInvestmentToDelete}
+              theme={theme}
+            />
+          )}
 
           {activeTab === 'goals' && (
             <Metas 
               goals={goals} 
               setGoals={setGoals} 
+              transactions={transactions}
+              setTransactions={setTransactions}
               user={user} 
               theme={theme} 
             />
@@ -2257,6 +1657,9 @@ export default function App() {
             <Cofre 
               vaults={vaults} 
               setVaults={setVaults} 
+              transactions={transactions}
+              handleDeleteTransaction={handleDeleteTransaction}
+              handleUpdateTransaction={handleUpdateTransaction}
               user={user} 
               theme={theme} 
             />
@@ -2273,7 +1676,7 @@ export default function App() {
           )}
 
           {activeTab === 'calendar' && (
-            <CalendarView 
+            <Calendario 
               transactions={transactions} 
               theme={theme} 
               onSelectTransaction={setSelectedTransaction}
@@ -3745,166 +3148,4 @@ export default function App() {
   );
 }
 
-function CalendarView({ 
-  transactions, 
-  theme, 
-  onSelectTransaction 
-}: { 
-  transactions: any[], 
-  theme: 'light' | 'dark', 
-  onSelectTransaction: (t: any) => void 
-}) {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
 
-  const monthStart = startOfMonth(currentMonth);
-  const monthEnd = endOfMonth(monthStart);
-  const startDate = startOfWeek(monthStart);
-  const endDate = endOfWeek(monthEnd);
-
-  const calendarDays = eachDayOfInterval({
-    start: startDate,
-    end: endDate,
-  });
-
-  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
-  const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
-
-  const dayTransactions = selectedDate 
-    ? transactions.filter(t => isSameDay(parseISO(t.date), selectedDate))
-    : [];
-
-  return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="grid grid-cols-1 lg:grid-cols-3 gap-8"
-    >
-      <div className="lg:col-span-2 space-y-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-colors duration-300">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-bold dark:text-white capitalize">
-              {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
-            </h3>
-            <div className="flex gap-2">
-              <button 
-                onClick={prevMonth}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 transition-colors"
-              >
-                <ChevronLeft size={20} />
-              </button>
-              <button 
-                onClick={nextMonth}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-500 dark:text-slate-400 transition-colors"
-              >
-                <ChevronRight size={20} />
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-7 mb-2">
-            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-              <div key={day} className="text-center text-xs font-bold text-slate-400 dark:text-slate-600 uppercase tracking-wider py-2">
-                {day}
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 gap-px bg-slate-100 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden">
-            {calendarDays.map((day, idx) => {
-              const hasIn = transactions.some(t => t.type === 'entrada' && isSameDay(parseISO(t.date), day));
-              const hasOut = transactions.some(t => t.type === 'saida' && isSameDay(parseISO(t.date), day));
-              const isSelected = selectedDate && isSameDay(day, selectedDate);
-              const isCurrentMonth = isSameMonth(day, monthStart);
-
-              return (
-                <div 
-                  key={idx}
-                  onClick={() => setSelectedDate(day)}
-                  className={`min-h-[100px] p-2 bg-white dark:bg-slate-900 cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 relative ${
-                    !isCurrentMonth ? 'opacity-25 grayscale' : ''
-                  } ${isSelected ? 'ring-2 ring-inset ring-emerald-500 z-10' : ''}`}
-                >
-                  <span className={`text-sm font-semibold ${isSelected ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-300'}`}>
-                    {format(day, 'd')}
-                  </span>
-                  
-                  <div className="mt-2 flex flex-col gap-1">
-                    {hasIn && (
-                      <div className="h-1.5 w-full bg-emerald-500/20 dark:bg-emerald-400/10 border-l-2 border-emerald-500 rounded-sm"></div>
-                    )}
-                    {hasOut && (
-                      <div className="h-1.5 w-full bg-rose-500/20 dark:bg-rose-400/10 border-l-2 border-rose-500 rounded-sm"></div>
-                    )}
-                  </div>
-
-                  {isSameDay(day, new Date()) && (
-                    <div className="absolute top-2 right-2 w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm transition-colors duration-300 sticky top-8">
-          <div className="mb-6">
-            <h4 className="text-lg font-bold dark:text-white">Resumo do Dia</h4>
-            <p className="text-sm text-slate-500 dark:text-slate-400 capitalize">
-              {selectedDate ? format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR }) : 'Selecione um dia'}
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            {dayTransactions.length > 0 ? (
-              dayTransactions.map(t => (
-                <div 
-                  key={t.id} 
-                  onClick={() => onSelectTransaction(t)}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-805/50 dark:bg-slate-800/50 dark:hover:bg-slate-800 transition-all cursor-pointer border border-transparent hover:border-slate-105 hover:dark:border-slate-700/50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${t.type === 'entrada' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                      {t.type === 'entrada' ? <ArrowUpCircle size={16} /> : <ArrowDownCircle size={16} />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold dark:text-slate-200">{t.description}</p>
-                      <p className="text-[10px] text-slate-400 uppercase font-bold">{t.category}</p>
-                    </div>
-                  </div>
-                  <p className={`text-sm font-black ${t.type === 'entrada' ? 'text-emerald-600' : 'text-slate-900 dark:text-white'}`}>
-                    {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <div className="py-12 flex flex-col items-center justify-center text-center opacity-50">
-                <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full mb-3">
-                  <Calendar size={32} className="text-slate-400" />
-                </div>
-                <p className="text-sm font-medium text-slate-500">Nenhuma movimentação neste dia</p>
-              </div>
-            )}
-          </div>
-          
-          {dayTransactions.length > 0 && (
-            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-bold text-slate-400 uppercase whitespace-nowrap">Saldo do Dia</span>
-                <span className={`text-lg font-black ${
-                  dayTransactions.reduce((acc, t) => acc + (t.type === 'entrada' ? t.value : -t.value), 0) >= 0 
-                    ? 'text-emerald-600' 
-                    : 'text-rose-600'
-                }`}>
-                  R$ {dayTransactions.reduce((acc, t) => acc + (t.type === 'entrada' ? t.value : -t.value), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
