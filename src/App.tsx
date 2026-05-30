@@ -48,7 +48,8 @@ import {
   Search,
   X,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -165,19 +166,42 @@ export default function App() {
   const [inlineValue, setInlineValue] = useState<string>('');
 
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState<string | null>(null);
+  const [customCategories, setCustomCategories] = useState<any[]>([]);
 
   // States, useMemo filters, and clearAllFilters moved to Transacoes.tsx
 
   // Budgets and Investments states
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   
   // States moved to Transacoes.tsx:
   // typeFilter, txSearchQuery, showAdvancedFilters, statusFilter, categoryFilter, bankFilter, paymentMethodFilter, startDateFilter, endDateFilter
 
   const [newBudget, setNewBudget] = useState({ categoryId: 'alimentacao', limit: '' });
+  const [newCategory, setNewCategory] = useState({ name: '', icon: '', color: '#64748b' });
   const [isInvestmentModalOpen, setIsInvestmentModalOpen] = useState(false);
   const [newInvestment, setNewInvestment] = useState({ name: '', value: '', type: 'Renda Fixa' });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [balanceType, setBalanceType] = useState<'total' | 'recebido' | 'futuro' | 'pendente' | 'gasto'>(() => {
+    const saved = localStorage.getItem('fortuna_balance_type');
+    return (saved as 'total' | 'recebido' | 'futuro' | 'pendente' | 'gasto') || 'total';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('fortuna_balance_type', balanceType);
+  }, [balanceType]);
+
+  const [isBalanceCardExpanded, setIsBalanceCardExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('fortuna_balance_expanded');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('fortuna_balance_expanded', String(isBalanceCardExpanded));
+  }, [isBalanceCardExpanded]);
+
   const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
   const [investmentToDelete, setInvestmentToDelete] = useState<any | null>(null);
 
@@ -297,6 +321,18 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, recurrentesPath);
     });
 
+    // H. Live sync custom categories
+    const categoriesPath = `users/${user.uid}/categories`;
+    const unsubCategories = onSnapshot(collection(db, categoriesPath), (snapshot) => {
+      const cats: any[] = [];
+      snapshot.forEach((d) => {
+        cats.push(d.data());
+      });
+      setCustomCategories(cats);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, categoriesPath);
+    });
+
     return () => {
       unsubTransactions();
       unsubBudgets();
@@ -304,8 +340,31 @@ export default function App() {
       unsubGoals();
       unsubVaults();
       unsubRecurrentes();
+      unsubCategories();
     };
   }, [user]);
+
+  const mergedCategories = useMemo(() => {
+    const customIds = new Set(customCategories.map(c => c.id));
+    const filteredBase = CATEGORIES.filter(c => !customIds.has(c.id));
+    const base = [...filteredBase, ...customCategories];
+    const existingIds = new Set(base.map(c => c.id));
+    
+    // Add any categories from budgets that might not be in base
+    Object.keys(budgets).forEach(budgetId => {
+      if (!existingIds.has(budgetId)) {
+        base.push({
+          id: budgetId,
+          name: budgetId.charAt(0).toUpperCase() + budgetId.slice(1),
+          color: '#64748b',
+          icon: '📊'
+        });
+        existingIds.add(budgetId);
+      }
+    });
+
+    return base.sort((a, b) => a.name.localeCompare(b.name));
+  }, [customCategories, budgets]);
 
   const handleLogin = async () => {
     try {
@@ -403,8 +462,24 @@ export default function App() {
     const overdue = transactions.filter(t => t.type === 'saida' && t.status === 'atrasado').reduce((acc, curr) => acc + curr.value, 0);
     const toReceive = transactions.filter(t => t.type === 'entrada' && t.status === 'pendente').reduce((acc, curr) => acc + curr.value, 0);
     
+    // Status-based balances
+    const receivedIn = transactions.filter(t => t.type === 'entrada' && t.status === 'pago').reduce((acc, curr) => acc + curr.value, 0);
+    const receivedOut = transactions.filter(t => t.type === 'saida' && t.status === 'pago').reduce((acc, curr) => acc + curr.value, 0);
+    const balanceRecebido = receivedIn - receivedOut;
+
+    const futureIn = transactions.filter(t => t.type === 'entrada' && t.status === 'futuro').reduce((acc, curr) => acc + curr.value, 0);
+    const futureOut = transactions.filter(t => t.type === 'saida' && t.status === 'futuro').reduce((acc, curr) => acc + curr.value, 0);
+    const balanceFuturo = futureIn - futureOut;
+
+    const pendingIn = transactions.filter(t => t.type === 'entrada' && t.status === 'pendente').reduce((acc, curr) => acc + curr.value, 0);
+    const pendingOut = transactions.filter(t => t.type === 'saida' && (t.status === 'pendente' || t.status === 'atrasado')).reduce((acc, curr) => acc + curr.value, 0);
+    const balancePendente = pendingIn - pendingOut;
+    
     return {
       balance: totalIn - totalOut,
+      balanceRecebido,
+      balanceFuturo,
+      balancePendente,
       totalIn,
       totalOut,
       overdue,
@@ -415,8 +490,8 @@ export default function App() {
   const allCategoriesData = useMemo(() => {
     const dataMap: Record<string, { name: string; value: number; color: string }> = {};
     
-    // Initialize standard categories
-    CATEGORIES.forEach(cat => {
+    // Initialize standard/custom categories
+    mergedCategories.forEach(cat => {
       dataMap[cat.id] = {
         name: cat.name,
         value: 0,
@@ -456,8 +531,8 @@ export default function App() {
   const allCategoriesIncomesData = useMemo(() => {
     const dataMap: Record<string, { name: string; value: number; color: string }> = {};
     
-    // Initialize standard categories
-    CATEGORIES.forEach(cat => {
+    // Initialize standard/custom categories
+    mergedCategories.forEach(cat => {
       dataMap[cat.id] = {
         name: cat.name,
         value: 0,
@@ -636,6 +711,7 @@ export default function App() {
 
   const handleDeleteTransaction = async (id: string) => {
     const transactionToDelete = transactions.find(t => t.id === id);
+    if (!transactionToDelete) return;
     
     if (user) {
       const path = `users/${user.uid}/transactions`;
@@ -643,10 +719,12 @@ export default function App() {
         await deleteDoc(doc(db, path, id));
         
         // Update vault balance if linked
-        if (transactionToDelete?.vaultId) {
+        if (transactionToDelete.vaultId) {
           const vault = vaults.find(v => v.id === transactionToDelete.vaultId);
           if (vault) {
-            const amount = transactionToDelete.value;
+            const amount = Number(transactionToDelete.value) || 0;
+            // If it was a deposit (saida), removing it means reducing vault balance
+            // If it was a withdrawal (entrada), removing it means increasing vault balance
             const logContrib = transactionToDelete.type === 'entrada' ? -amount : amount;
             const updatedVault = { 
               ...vault, 
@@ -659,13 +737,13 @@ export default function App() {
         handleFirestoreError(error, OperationType.DELETE, `${path}/${id}`);
       }
     } else {
-      setTransactions(transactions.filter(t => t.id !== id));
+      setTransactions(prev => prev.filter(t => t.id !== id));
       
       // Local sync for vaults if in demo/local mode
-      if (transactionToDelete?.vaultId) {
+      if (transactionToDelete.vaultId) {
         const vault = vaults.find(v => v.id === transactionToDelete.vaultId);
         if (vault) {
-          const amount = transactionToDelete.value;
+          const amount = Number(transactionToDelete.value) || 0;
           const logContrib = transactionToDelete.type === 'entrada' ? -amount : amount;
           setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue - logContrib) } : v));
         }
@@ -687,35 +765,68 @@ export default function App() {
       try {
         await setDoc(doc(db, path, finalTransaction.id), finalTransaction);
         
-        // Sync vault balance if linked
+        // Sync vault balance if linked (or unlink if needed)
+        // 1. If it was linked to a vault, remove old contribution
+        if (oldTransaction?.vaultId) {
+          const oldVault = vaults.find(v => v.id === oldTransaction.vaultId);
+          if (oldVault) {
+            const amount = Number(oldTransaction.value) || 0;
+            const logContrib = oldTransaction.type === 'entrada' ? -amount : amount;
+            const revertedVault = { 
+              ...oldVault, 
+              currentValue: Math.max(0, oldVault.currentValue - logContrib) 
+            };
+            await setDoc(doc(db, `users/${user.uid}/vaults`, oldVault.id), revertedVault);
+          }
+        }
+
+        // 2. If it is NOW linked to a vault, add new contribution
+        // (If same vault, it will be updated twice but correctly)
+        // To be safer, we could calculate the diff if vaultId is the same
         if (finalTransaction.vaultId) {
-          const vault = vaults.find(v => v.id === finalTransaction.vaultId);
-          if (vault && oldTransaction) {
-            const oldContrib = oldTransaction.type === 'entrada' ? -oldTransaction.value : oldTransaction.value;
-            const newContrib = finalTransaction.type === 'entrada' ? -finalTransaction.value : finalTransaction.value;
-            const diff = newContrib - oldContrib;
+          const newVault = vaults.find(v => v.id === finalTransaction.vaultId);
+          if (newVault) {
+            const amount = Number(finalTransaction.value) || 0;
+            const logContrib = finalTransaction.type === 'entrada' ? -amount : amount;
+            
+            // Re-fetch vault from state because it might have been updated by step 1
+            // Use local state for now, Firestore onSnapshot will eventually catch up
+            // For production, a transaction/batch would be better.
+            const currentVaultState = vaults.find(v => v.id === newVault.id) || newVault;
             
             const updatedVault = { 
-              ...vault, 
-              currentValue: Math.max(0, vault.currentValue + diff) 
+              ...currentVaultState, 
+              currentValue: Math.max(0, currentVaultState.currentValue + logContrib) 
             };
-            await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), updatedVault);
+            await setDoc(doc(db, `users/${user.uid}/vaults`, newVault.id), updatedVault);
           }
         }
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `${path}/${finalTransaction.id}`);
       }
     } else {
-      setTransactions(transactions.map(t => t.id === finalTransaction.id ? finalTransaction : t));
+      setTransactions(prev => prev.map(t => t.id === finalTransaction.id ? finalTransaction : t));
       
+      // Local mode sync
+      if (oldTransaction?.vaultId) {
+        setVaults(prev => prev.map(v => {
+          if (v.id === oldTransaction.vaultId) {
+            const amount = Number(oldTransaction.value) || 0;
+            const logContrib = oldTransaction.type === 'entrada' ? -amount : amount;
+            return { ...v, currentValue: Math.max(0, v.currentValue - logContrib) };
+          }
+          return v;
+        }));
+      }
       if (finalTransaction.vaultId) {
-        const vault = vaults.find(v => v.id === finalTransaction.vaultId);
-        if (vault && oldTransaction) {
-          const oldContrib = oldTransaction.type === 'entrada' ? -oldTransaction.value : oldTransaction.value;
-          const newContrib = finalTransaction.type === 'entrada' ? -finalTransaction.value : finalTransaction.value;
-          const diff = newContrib - oldContrib;
-          setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + diff) } : v));
-        }
+        setVaults(prev => prev.map(v => {
+          if (v.id === finalTransaction.vaultId) {
+            const amount = Number(finalTransaction.value) || 0;
+            const logContrib = finalTransaction.type === 'entrada' ? -amount : amount;
+            return { ...v, currentValue: Math.max(0, v.currentValue + logContrib) };
+          }
+          return v;
+        }));
       }
     }
     setEditingTransaction(null);
@@ -809,7 +920,49 @@ export default function App() {
     }
 
     setIsBudgetModalOpen(false);
+    setSelectedBudgetCategory(null);
     setNewBudget({ categoryId: 'alimentacao', limit: '' });
+  };
+
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !newCategory.name) return;
+
+    const catId = editingCategoryId || newCategory.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-');
+    const categoryPath = `users/${user.uid}/categories/${catId}`;
+
+    try {
+      await setDoc(doc(db, categoryPath), {
+        id: catId,
+        name: newCategory.name,
+        icon: newCategory.icon,
+        color: newCategory.color,
+        userId: user.uid
+      });
+      setIsCategoryModalOpen(false);
+      setEditingCategoryId(null);
+      setNewCategory({ name: '', icon: '', color: '#64748b' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, categoryPath);
+    }
+  };
+
+  const handleDeleteCategory = async (catId: string) => {
+    if (!user) return;
+    const categoryPath = `users/${user.uid}/categories/${catId}`;
+    try {
+      await deleteDoc(doc(db, categoryPath));
+      
+      // Delete corresponding budget limit as well to be clean
+      const budgetPath = `users/${user.uid}/budgets/${catId}`;
+      await deleteDoc(doc(db, budgetPath));
+
+      setIsCategoryModalOpen(false);
+      setEditingCategoryId(null);
+      setNewCategory({ name: '', icon: '', color: '#64748b' });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, categoryPath);
+    }
   };
 
   const handleDeleteBudget = async (categoryId: string) => {
@@ -870,6 +1023,35 @@ export default function App() {
       setInvestments(investments.filter(inv => inv.id !== id));
     }
     setInvestmentToDelete(null);
+  };
+
+  const handleExportData = () => {
+    const dataToExport = {
+      transactions,
+      budgets,
+      investments,
+      goals,
+      vaults,
+      recurrentes,
+      customCategories,
+      exportDate: new Date().toISOString(),
+      appName: 'Finanças App'
+    };
+    
+    try {
+      const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `meus_dados_financeiros_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Ocorreu um erro ao exportar os dados.');
+    }
   };
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
@@ -1138,7 +1320,7 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
       {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-6 hidden md:flex flex-col">
+      <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-6 hidden md:flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0">
         <div className="flex items-center gap-3 mb-10 px-2">
           <div className="bg-emerald-600 p-2 rounded-lg shrink-0">
             <Wallet className="text-white" size={24} />
@@ -1161,56 +1343,148 @@ export default function App() {
         </nav>
 
         <div className="mt-8 space-y-4">
-          {/* Theme switcher */}
-          <button 
-            onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
-          >
-            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
-            <span className="font-medium">{theme === 'light' ? 'Tema Escuro' : 'Tema Claro'}</span>
-          </button>
+          {/* Saldo Card */}
+          <div className={`p-4 rounded-3xl transition-all duration-300 relative ${
+            balanceType === 'total' ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40' :
+            balanceType === 'recebido' ? 'bg-teal-50/70 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40' :
+            balanceType === 'futuro' ? 'bg-sky-50/70 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40' :
+            balanceType === 'pendente' ? 'bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40' :
+            'bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40'
+          }`}>
+            <div 
+              onClick={() => setIsBalanceCardExpanded(!isBalanceCardExpanded)}
+              className="cursor-pointer select-none"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-[10px] font-extrabold uppercase tracking-[0.1em] ${
+                  balanceType === 'total' ? 'text-emerald-700 dark:text-emerald-400' :
+                  balanceType === 'recebido' ? 'text-teal-700 dark:text-teal-400' :
+                  balanceType === 'futuro' ? 'text-sky-750 dark:text-sky-400' :
+                  balanceType === 'pendente' ? 'text-amber-700 dark:text-amber-400' :
+                  'text-rose-700 dark:text-rose-400'
+                }`}>
+                  {balanceType === 'total' ? '💵 Saldo Total' :
+                   balanceType === 'recebido' ? '✅ Em conta' :
+                   balanceType === 'futuro' ? '🔮 Saldo Futuro' :
+                   balanceType === 'pendente' ? '⏳ Saldo Pendente' :
+                   '💸 Total Gasto'}
+                </span>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsBalanceCardExpanded(!isBalanceCardExpanded);
+                  }}
+                  className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors cursor-pointer text-slate-500 dark:text-slate-400 font-bold"
+                  title={isBalanceCardExpanded ? "Recolher Saldos" : "Expandir Saldos"}
+                >
+                  {isBalanceCardExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                </button>
+              </div>
+              <p className={`text-xl font-black tracking-tight leading-none mb-1 transition-colors duration-300 ${
+                  balanceType === 'total' ? 'text-emerald-900 dark:text-emerald-50' :
+                  balanceType === 'recebido' ? 'text-teal-900 dark:text-teal-50' :
+                  balanceType === 'futuro' ? 'text-sky-900 dark:text-sky-50' :
+                  balanceType === 'pendente' ? 'text-amber-900 dark:text-amber-50' :
+                  'text-rose-900 dark:text-rose-50'
+              }`}>
+                R$ {
+                  (balanceType === 'total' ? stats.balance :
+                   balanceType === 'recebido' ? stats.balanceRecebido :
+                   balanceType === 'futuro' ? stats.balanceFuturo :
+                   balanceType === 'pendente' ? stats.balancePendente :
+                   stats.totalOut).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                }
+              </p>
+            </div>
 
-          {/* Sado Total Card */}
-          <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl">
-            <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-1 uppercase tracking-wider">Saldo Total</p>
-            <p className="text-xl font-bold text-emerald-900 dark:text-emerald-50">
-              R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </p>
+            <AnimatePresence initial={false}>
+              {isBalanceCardExpanded && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                  animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                  exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-3 border-t border-slate-900/5 dark:border-white/5 space-y-1 text-[10px]">
+                    <button 
+                      onClick={() => setBalanceType('total')}
+                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                        balanceType === 'total' ? 'bg-emerald-500/10 dark:bg-emerald-500/20 font-bold text-emerald-800 dark:text-emerald-300' : 'hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>Total:</span>
+                      <span>R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </button>
+                    <button 
+                      onClick={() => setBalanceType('recebido')}
+                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                        balanceType === 'recebido' ? 'bg-teal-500/10 dark:bg-teal-500/20 font-bold text-teal-800 dark:text-teal-300' : 'hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>Em conta:</span>
+                      <span>R$ {stats.balanceRecebido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </button>
+                    <button 
+                      onClick={() => setBalanceType('futuro')}
+                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                        balanceType === 'futuro' ? 'bg-sky-500/10 dark:bg-sky-500/20 font-bold text-sky-800 dark:text-sky-300' : 'hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>Futuro:</span>
+                      <span>R$ {stats.balanceFuturo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </button>
+                    <button 
+                      onClick={() => setBalanceType('pendente')}
+                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                        balanceType === 'pendente' ? 'bg-amber-500/10 dark:bg-amber-500/20 font-bold text-amber-800 dark:text-amber-300' : 'hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>Pendente:</span>
+                      <span>R$ {stats.balancePendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </button>
+                    <button 
+                      onClick={() => setBalanceType('gasto')}
+                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                        balanceType === 'gasto' ? 'bg-rose-500/10 dark:bg-rose-500/20 font-bold text-rose-800 dark:text-rose-300' : 'hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span>Total gasto:</span>
+                      <span>R$ {stats.totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Authentication Panel */}
           {authLoading ? (
             <div className="py-2 text-center text-xs text-slate-400">Carregando perfil...</div>
           ) : user ? (
-            <div className="flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <button 
+              onClick={() => setIsUserModalOpen(true)}
+              className="w-full text-left flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer group"
+            >
               <div className="flex items-center gap-3">
                 {user.photoURL ? (
                   <img 
                     src={user.photoURL} 
                     alt={user.displayName || 'Avatar'} 
-                    className="w-8 h-8 rounded-full border border-emerald-500/30 shrink-0"
+                    className="w-8 h-8 rounded-full border border-emerald-500/30 shrink-0 group-hover:scale-110 transition-transform"
                     referrerPolicy="no-referrer"
                     id="user-avatar"
                   />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shrink-0 group-hover:scale-110 transition-transform">
                     {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate dark:text-slate-100">{user.displayName || 'Usuário'}</p>
+                  <p className="text-xs font-bold truncate dark:text-slate-100 group-hover:text-emerald-600 transition-colors">{user.displayName || 'Usuário'}</p>
                   <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
                 </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-rose-50/50 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-bold rounded-xl transition-all cursor-pointer"
-                id="logout-btn"
-              >
-                <LogOut size={12} />
-                Desconectar
-              </button>
-            </div>
+            </button>
           ) : (
             <div className="p-3 bg-emerald-50/30 dark:bg-slate-800/30 rounded-2xl border border-dashed border-emerald-500/20 dark:border-slate-700/50 flex flex-col gap-2">
               <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">Sincronize com a nuvem de forma segura.</p>
@@ -1300,77 +1574,6 @@ export default function App() {
               {/* Charts Section: Pie Charts side-by-side */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-rose-500" /> Gastos por Categoria</h3>
-                  
-                  {categoryExpensesData.length === 0 ? (
-                    <div className="h-64 flex flex-col items-center justify-center text-center p-4">
-                      <div className="w-16 h-16 bg-slate-50 dark:bg-slate-850/50 rounded-full flex items-center justify-center mb-3 text-slate-400">
-                        <PieChartIcon size={28} />
-                      </div>
-                      <p className="font-bold text-sm text-slate-705 dark:text-slate-200">Nenhum gasto registrado</p>
-                      <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Adicione uma transação de saída para gerar o gráfico.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-                      <div className="h-56 md:col-span-5 flex items-center justify-center">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={categoryExpensesData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={75}
-                              paddingAngle={4}
-                              dataKey="value"
-                              stroke="none"
-                            >
-                              {categoryExpensesData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip 
-                              formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                              contentStyle={{ 
-                                backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
-                                borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
-                                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
-                                borderRadius: '12px'
-                              }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      <div className="md:col-span-7 space-y-2 max-h-56 overflow-y-auto pr-1">
-                        {(() => {
-                          const totalSpend = categoryExpensesData.reduce((acc, curr) => acc + curr.value, 0);
-                          return categoryExpensesData.map((item) => {
-                            const percentage = totalSpend > 0 ? (item.value / totalSpend) * 100 : 0;
-                            return (
-                              <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                <div className="flex items-center gap-2">
-                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{item.name}</span>
-                                </div>
-                                <div className="flex items-center gap-3 text-right">
-                                  <span className="font-extrabold text-slate-900 dark:text-slate-100">
-                                    R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold w-10 shrink-0">
-                                    {percentage.toFixed(1)}%
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                   <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-emerald-600" /> Entradas por Categoria</h3>
                   
                   {categoryIncomesData.length === 0 ? (
@@ -1418,6 +1621,77 @@ export default function App() {
                           const totalIncome = categoryIncomesData.reduce((acc, curr) => acc + curr.value, 0);
                           return categoryIncomesData.map((item) => {
                             const percentage = totalIncome > 0 ? (item.value / totalIncome) * 100 : 0;
+                            return (
+                              <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{item.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3 text-right">
+                                  <span className="font-extrabold text-slate-900 dark:text-slate-100">
+                                    R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold w-10 shrink-0">
+                                    {percentage.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                  <h3 className="font-bold mb-6 flex items-center gap-2 dark:text-white"><PieChartIcon size={18} className="text-rose-500" /> Gastos por Categoria</h3>
+                  
+                  {categoryExpensesData.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-16 h-16 bg-slate-50 dark:bg-slate-850/50 rounded-full flex items-center justify-center mb-3 text-slate-400">
+                        <PieChartIcon size={28} />
+                      </div>
+                      <p className="font-bold text-sm text-slate-705 dark:text-slate-200">Nenhum gasto registrado</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Adicione uma transação de saída para gerar o gráfico.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                      <div className="h-56 md:col-span-5 flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={categoryExpensesData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={75}
+                              paddingAngle={4}
+                              dataKey="value"
+                              stroke="none"
+                            >
+                              {categoryExpensesData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              contentStyle={{ 
+                                backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
+                                borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
+                                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                                borderRadius: '12px'
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div className="md:col-span-7 space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {(() => {
+                          const totalSpend = categoryExpensesData.reduce((acc, curr) => acc + curr.value, 0);
+                          return categoryExpensesData.map((item) => {
+                            const percentage = totalSpend > 0 ? (item.value / totalSpend) * 100 : 0;
                             return (
                               <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                 <div className="flex items-center gap-2">
@@ -1572,7 +1846,7 @@ export default function App() {
                                 }}
                                 className="cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline decoration-emerald-500/60 transition-colors capitalize"
                               >
-                                {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
+                                {mergedCategories.find(c => c.id === t.category)?.name || t.category}
                               </span>
                             </p>
                           </div>
@@ -1607,6 +1881,7 @@ export default function App() {
           {activeTab === 'transactions' && (
             <Transacoes
               transactions={transactions}
+              categories={mergedCategories}
               setSelectedTransaction={setSelectedTransaction}
               setTypeMenuTx={setTypeMenuTx}
               setTypeMenuAnchor={setTypeMenuAnchor}
@@ -1628,8 +1903,13 @@ export default function App() {
             <Orcamentos 
               budgets={budgets}
               transactions={transactions}
+              categories={mergedCategories}
               setIsBudgetModalOpen={setIsBudgetModalOpen}
+              setIsCategoryModalOpen={setIsCategoryModalOpen}
               setSelectedBudgetCategory={setSelectedBudgetCategory}
+              setNewBudget={setNewBudget}
+              setEditingCategoryId={setEditingCategoryId}
+              setNewCategory={setNewCategory}
             />
           )}
 
@@ -1658,6 +1938,7 @@ export default function App() {
               vaults={vaults} 
               setVaults={setVaults} 
               transactions={transactions}
+              setTransactions={setTransactions}
               handleDeleteTransaction={handleDeleteTransaction}
               handleUpdateTransaction={handleUpdateTransaction}
               user={user} 
@@ -1774,8 +2055,7 @@ export default function App() {
                       value={newEntry.category}
                       onChange={(e) => setNewEntry({...newEntry, category: e.target.value})}
                     >
-                      {CATEGORIES.map(c => <option key={c.id} value={c.id}>{getCategoryIconAndStyle(c.id).icon} {c.name}</option>)}
-                      <option value="salario">💰 Salário</option>
+                      {mergedCategories.map(c => <option key={c.id} value={c.id}>{(c as any).icon || getCategoryIconAndStyle(c.id).icon} {c.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1933,7 +2213,7 @@ export default function App() {
                     <div>
                       <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Categoria</p>
                       <p className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize truncate max-w-[120px]">
-                        {CATEGORIES.find(c => c.id === selectedTransaction.category)?.name || selectedTransaction.category}
+                        {mergedCategories.find(c => c.id === selectedTransaction.category)?.name || selectedTransaction.category}
                       </p>
                     </div>
                   </div>
@@ -2057,10 +2337,117 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Category Modal */}
+      <AnimatePresence>
+        {isCategoryModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsCategoryModalOpen(false);
+                setEditingCategoryId(null);
+                setNewCategory({ name: '', icon: '', color: '#64748b' });
+              }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-black dark:text-white">
+                  {editingCategoryId ? 'Editar Categoria' : 'Nova Categoria'}
+                </h3>
+                <button 
+                  onClick={() => {
+                    setIsCategoryModalOpen(false);
+                    setEditingCategoryId(null);
+                    setNewCategory({ name: '', icon: '', color: '#64748b' });
+                  }} 
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 cursor-pointer"
+                >
+                  <Plus className="rotate-45" size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateCategory} className="p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Nome da Categoria</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="Ex: Educação, Assinaturas..."
+                    value={newCategory.name}
+                    onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-bold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Ícone/Emoji</label>
+                    <input 
+                      type="text"
+                      placeholder="Ex: 🎓"
+                      value={newCategory.icon}
+                      onChange={(e) => setNewCategory({ ...newCategory, icon: e.target.value })}
+                      className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-bold text-center text-xl"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Cor Accent (Hex)</label>
+                    <input 
+                      type="color"
+                      value={newCategory.color}
+                      onChange={(e) => setNewCategory({ ...newCategory, color: e.target.value })}
+                      className="w-full h-[46px] bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-1 outline-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3 pt-4">
+                  {editingCategoryId && (
+                    <button 
+                      type="button"
+                      onClick={() => handleDeleteCategory(editingCategoryId)}
+                      className="flex-1 min-w-[120px] border border-rose-200 dark:border-rose-950/50 text-rose-600 dark:text-rose-400 py-3 rounded-xl font-bold hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors text-xs cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Trash2 size={13} />
+                      {CATEGORIES.some(c => c.id === editingCategoryId) ? 'Resetar Padrão' : 'Apagar'}
+                    </button>
+                  )}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsCategoryModalOpen(false);
+                      setEditingCategoryId(null);
+                      setNewCategory({ name: '', icon: '', color: '#64748b' });
+                    }}
+                    className="flex-1 min-w-[80px] border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-xs cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 min-w-[100px] bg-emerald-600 text-white py-3 rounded-xl font-black shadow-md shadow-emerald-500/10 hover:bg-emerald-500 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                  >
+                    {editingCategoryId ? 'Salvar' : 'Criar Categoria'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Budget Modal */}
       <AnimatePresence>
         {isBudgetModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2092,9 +2479,9 @@ export default function App() {
                     onChange={(e) => setNewBudget({ ...newBudget, categoryId: e.target.value })}
                     className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800/80 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-emerald-500 transition-all font-semibold"
                   >
-                    {CATEGORIES.map(cat => (
+                    {mergedCategories.map(cat => (
                       <option key={cat.id} value={cat.id}>
-                        {cat.name}
+                        {(cat as any).icon || getCategoryIconAndStyle(cat.id).icon} {cat.name}
                       </option>
                     ))}
                   </select>
@@ -2330,8 +2717,7 @@ export default function App() {
                       value={editingTransaction.category}
                       onChange={(e) => setEditingTransaction({...editingTransaction, category: e.target.value})}
                     >
-                      {CATEGORIES.map(c => <option key={c.id} value={c.id}>{getCategoryIconAndStyle(c.id).icon} {c.name}</option>)}
-                      <option value="salario">💰 Salário</option>
+                      {mergedCategories.map(c => <option key={c.id} value={c.id}>{(c as any).icon || getCategoryIconAndStyle(c.id).icon} {c.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -2442,7 +2828,7 @@ export default function App() {
       {/* Category Budget Statement Modal */}
       <AnimatePresence>
         {selectedBudgetCategory && (() => {
-          const category = CATEGORIES.find(c => c.id === selectedBudgetCategory);
+          const category = mergedCategories.find(c => c.id === selectedBudgetCategory);
           const categoryName = category?.name || selectedBudgetCategory;
           const info = getCategoryIconAndStyle(selectedBudgetCategory);
           const catTransactions = transactions.filter(t => t.category === selectedBudgetCategory);
@@ -2466,9 +2852,15 @@ export default function App() {
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.93, opacity: 0, y: 15 }}
                 className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.2rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 dark:border-slate-800/80 overflow-hidden relative z-10 transition-colors duration-300 flex flex-col max-h-[85vh]"
+                style={{ 
+                  boxShadow: `0 25px 60px -15px ${category?.color}25`,
+                }}
               >
                 {/* Header */}
-                <div className={`p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r ${info.bg}`}>
+                <div 
+                  className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between"
+                  style={{ backgroundColor: `${category?.color}15` }}
+                >
                   <div className="flex items-center gap-3">
                     <span className="text-2xl select-none">{info.icon}</span>
                     <div>
@@ -2476,12 +2868,24 @@ export default function App() {
                       <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Histórico e Limite de Gastos</p>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => setSelectedBudgetCategory(null)} 
-                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 cursor-pointer"
-                  >
-                    <Plus className="rotate-45" size={24} />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button 
+                      onClick={() => {
+                        setNewBudget({ categoryId: selectedBudgetCategory, limit: budgetLimit > 0 ? budgetLimit.toString() : '' });
+                        setIsBudgetModalOpen(true);
+                      }}
+                      className="p-1.5 hover:bg-white/20 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-600 dark:text-slate-300 cursor-pointer"
+                      title="Editar Limite"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button 
+                      onClick={() => setSelectedBudgetCategory(null)} 
+                      className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 cursor-pointer"
+                    >
+                      <Plus className="rotate-45" size={24} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Info / Progress Cards */}
@@ -2673,7 +3077,13 @@ export default function App() {
               <div className="w-12 h-1 bg-slate-200 dark:bg-slate-800/80 rounded-full mx-auto mb-2" />
 
               {/* Perfil Header */}
-              <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 rounded-2xl">
+              <button 
+                onClick={() => {
+                  setIsUserModalOpen(true);
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full text-left flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-950/30 border border-slate-100 dark:border-slate-800/60 rounded-2xl active:scale-[0.98] transition-all"
+              >
                 {user ? (
                   <>
                     {user.photoURL ? (
@@ -2689,7 +3099,10 @@ export default function App() {
                       </div>
                     )}
                     <div className="flex-1 min-w-0 font-sans">
-                      <p className="font-bold text-sm block truncate dark:text-slate-100">{user.displayName || 'Usuário'}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-sm block truncate dark:text-slate-100">{user.displayName || 'Usuário'}</p>
+                        <ChevronRight size={16} className="text-slate-400" />
+                      </div>
                       <p className="text-xs text-slate-400 block truncate">{user.email}</p>
                     </div>
                   </>
@@ -2704,7 +3117,7 @@ export default function App() {
                     </div>
                   </>
                 )}
-              </div>
+              </button>
 
               {/* Menu items representing pages or functions */}
               <div className="space-y-2">
@@ -2781,21 +3194,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Preferences Accent (Theme Switcher and Signout) */}
+              {/* Preferences Accent (Signout) */}
               <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950/30 rounded-2xl border border-slate-100 dark:border-slate-850/30">
-                  <div className="flex items-center gap-3 text-slate-700 dark:text-slate-300">
-                    {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                    <span className="text-sm font-semibold">Tema Principal</span>
-                  </div>
-                  <button 
-                    onClick={toggleTheme}
-                    className="p-1 px-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-705 rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer text-slate-800 dark:text-slate-100"
-                  >
-                    Ativar {theme === 'light' ? 'Tema Escuro' : 'Tema Claro'}
-                  </button>
-                </div>
-
                 {user ? (
                   <button
                     onClick={() => {
@@ -3075,7 +3475,7 @@ export default function App() {
               <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/80 mb-1">
                 Alterar Categoria
               </div>
-              {CATEGORIES.map(cat => (
+              {mergedCategories.map(cat => (
                 <button
                   key={cat.id}
                   type="button"
@@ -3088,7 +3488,11 @@ export default function App() {
                     categoryMenuTx.category === cat.id ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                  {cat.icon || getCategoryIconAndStyle(cat.id).icon ? (
+                    <span className="text-sm shrink-0">{cat.icon || getCategoryIconAndStyle(cat.id).icon}</span>
+                  ) : (
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color }} />
+                  )}
                   {cat.name}
                 </button>
               ))}
@@ -3142,6 +3546,99 @@ export default function App() {
               ))}
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* User Profile Modal */}
+      <AnimatePresence>
+        {isUserModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsUserModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-black dark:text-white">Perfil do Usuário</h3>
+                <button 
+                  onClick={() => setIsUserModalOpen(false)} 
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-400 cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-8 flex flex-col items-center">
+                {user?.photoURL ? (
+                  <img 
+                    src={user.photoURL} 
+                    alt="Avatar" 
+                    className="w-20 h-20 rounded-full border-4 border-emerald-500/20 shadow-lg mb-4"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-emerald-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-emerald-500/20 mb-4">
+                    {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                )}
+                
+                <div className="text-center mb-8">
+                  <h4 className="text-xl font-black dark:text-slate-100">{user?.displayName || 'Usuário Fortuna'}</h4>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">{user?.email || 'Nenhum e-mail vinculado'}</p>
+                </div>
+
+                <div className="w-full space-y-3 pt-6 border-t border-slate-100 dark:border-slate-800/60">
+                  <button 
+                    onClick={toggleTheme}
+                    className="w-full h-14 flex items-center justify-center gap-3 px-4 rounded-2xl bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-emerald-900/10 transition-all border border-slate-100 dark:border-slate-800/80 text-slate-700 dark:text-slate-200 font-bold text-sm group"
+                  >
+                    {theme === 'light' ? (
+                      <>
+                        <Moon size={20} className="text-indigo-500 group-hover:scale-110 transition-transform" />
+                        <span>Ativar Tema Escuro</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sun size={20} className="text-amber-500 group-hover:scale-110 transition-transform" />
+                        <span>Ativar Tema Claro</span>
+                      </>
+                    )}
+                  </button>
+
+                   <button 
+                    onClick={() => {
+                      handleExportData();
+                    }}
+                    className="w-full h-14 flex items-center justify-center gap-3 px-4 rounded-2xl bg-slate-50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-emerald-900/10 transition-all border border-slate-100 dark:border-slate-800/80 text-slate-700 dark:text-slate-200 font-bold text-sm group"
+                  >
+                    <Download size={20} className="text-emerald-500 group-hover:scale-110 transition-transform" />
+                    Exportar Base de Dados
+                  </button>
+
+                  {user && (
+                    <button
+                      onClick={() => {
+                        handleLogout();
+                        setIsUserModalOpen(false);
+                      }}
+                      className="w-full h-14 flex items-center justify-center gap-3 px-4 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 font-black rounded-2xl transition-all cursor-pointer text-sm"
+                    >
+                      <LogOut size={20} />
+                      Sair da Conta
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

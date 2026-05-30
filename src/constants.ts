@@ -10,7 +10,9 @@ export const CATEGORIES = [
   { id: 'presentes', name: 'Presentes', color: '#ec4899' },
   { id: 'moradia', name: 'Moradia', color: '#8b5cf6' },
   { id: 'assinaturas', name: 'Assinaturas', color: '#06b6d4' },
-  { id: 'outros', name: 'Outros', color: '#64748b' },
+  { id: 'salario', name: 'Salários', color: '#14b8a6' },
+  { id: 'cofre', name: 'Cofre', color: '#6366f1' },
+  { id: 'outros', name: 'Outras', color: '#64748b' },
 ];
 
 export const BANKS = ['Nubank', 'Itaú', 'Inter', 'Bradesco', 'Santander', 'Dinheiro'];
@@ -83,6 +85,12 @@ export const getCategoryIconAndStyle = (categoryId: string) => {
         bg: 'bg-teal-50 dark:bg-teal-950/20',
         text: 'text-lg'
       };
+    case 'cofre':
+      return {
+        icon: '🛡️',
+        bg: 'bg-indigo-50 dark:bg-indigo-950/20',
+        text: 'text-lg'
+      };
     case 'outros':
       return {
         icon: '📝',
@@ -102,7 +110,7 @@ export const getStatusColorClasses = (status: string, isRow: boolean = false) =>
   switch (status) {
     case 'pago':
       return isRow 
-        ? 'bg-emerald-50/30 dark:bg-emerald-500/5 hover:bg-emerald-100/50 dark:hover:bg-emerald-500/10' 
+        ? 'hover:bg-slate-50 dark:hover:bg-slate-800/40' 
         : 'bg-emerald-50/40 dark:bg-emerald-500/10 hover:bg-emerald-100/60 dark:hover:bg-emerald-500/20 shadow-sm shadow-emerald-100/50 dark:shadow-none';
     case 'atrasado':
       return isRow 

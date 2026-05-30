@@ -263,6 +263,19 @@
         "description": { "type": "string" }
       },
       "required": ["id", "type", "amount", "date"]
+    },
+    "category": {
+      "title": "Category",
+      "description": "Custom transaction category",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "icon": { "type": "string" },
+        "color": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "icon", "color", "userId"]
     }
   },
   "firestore": {
@@ -273,6 +286,10 @@
     "/users/{userId}/transactions/{transactionId}": {
       "schema": "transaction",
       "description": "Per-user list of financial transactions"
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": "category",
+      "description": "Per-user custom categories"
     },
     "/users/{userId}/budgets/{categoryId}": {
       "schema": "budget",

@@ -20,6 +20,7 @@ interface Transaction {
 
 interface TransacoesProps {
   transactions: Transaction[];
+  categories: { id: string, name: string, color: string, icon?: string }[];
   setSelectedTransaction: (tx: Transaction) => void;
   setTypeMenuTx: (tx: Transaction) => void;
   setTypeMenuAnchor: (anchor: { x: number; y: number }) => void;
@@ -38,6 +39,7 @@ interface TransacoesProps {
 
 const Transacoes: React.FC<TransacoesProps> = ({
   transactions,
+  categories,
   setSelectedTransaction,
   setTypeMenuTx,
   setTypeMenuAnchor,
@@ -65,6 +67,32 @@ const Transacoes: React.FC<TransacoesProps> = ({
   const [endDateFilter, setEndDateFilter] = useState('');
   
   // Removed local inline edit states as they are now props
+
+  const statsLocal = useMemo(() => {
+    const totalIn = transactions.filter(t => t.type === 'entrada').reduce((acc, curr) => acc + curr.value, 0);
+    const totalOut = transactions.filter(t => t.type === 'saida').reduce((acc, curr) => acc + curr.value, 0);
+    
+    // Status-based balances
+    const receivedIn = transactions.filter(t => t.type === 'entrada' && t.status === 'pago').reduce((acc, curr) => acc + curr.value, 0);
+    const receivedOut = transactions.filter(t => t.type === 'saida' && t.status === 'pago').reduce((acc, curr) => acc + curr.value, 0);
+    const balanceRecebido = receivedIn - receivedOut;
+
+    const futureIn = transactions.filter(t => t.type === 'entrada' && t.status === 'futuro').reduce((acc, curr) => acc + curr.value, 0);
+    const futureOut = transactions.filter(t => t.type === 'saida' && t.status === 'futuro').reduce((acc, curr) => acc + curr.value, 0);
+    const balanceFuturo = futureIn - futureOut;
+
+    const pendingIn = transactions.filter(t => t.type === 'entrada' && t.status === 'pendente').reduce((acc, curr) => acc + curr.value, 0);
+    const pendingOut = transactions.filter(t => t.type === 'saida' && (t.status === 'pendente' || t.status === 'atrasado')).reduce((acc, curr) => acc + curr.value, 0);
+    const balancePendente = pendingIn - pendingOut;
+
+    return {
+      balance: totalIn - totalOut,
+      balanceRecebido,
+      balanceFuturo,
+      balancePendente,
+      totalOut,
+    };
+  }, [transactions]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -127,6 +155,59 @@ const Transacoes: React.FC<TransacoesProps> = ({
       exit={{ opacity: 0, y: -10 }}
       className="space-y-6"
     >
+      {/* Resumo de Saldos */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+        {/* Card Em Conta */}
+        <div className="bg-teal-50/40 dark:bg-teal-950/10 border border-teal-100/50 dark:border-teal-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-teal-50/60 dark:hover:bg-teal-950/15">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-teal-700 dark:text-teal-400 mb-1 block">
+            ✅ Em Conta
+          </span>
+          <p className="text-base font-black tracking-tight text-teal-900 dark:text-teal-100">
+            R$ {statsLocal.balanceRecebido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        {/* Card Futuro */}
+        <div className="bg-sky-50/40 dark:bg-sky-950/10 border border-sky-100/50 dark:border-sky-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-sky-50/60 dark:hover:bg-sky-950/15">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-sky-700 dark:text-sky-400 mb-1 block">
+            🔮 Futuro
+          </span>
+          <p className="text-base font-black tracking-tight text-sky-900 dark:text-sky-100">
+            R$ {statsLocal.balanceFuturo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        {/* Card Pendente */}
+        <div className="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-100/50 dark:border-amber-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-amber-50/60 dark:hover:bg-amber-950/15">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-1 block">
+            ⏳ Pendente
+          </span>
+          <p className="text-base font-black tracking-tight text-amber-900 dark:text-amber-100">
+            R$ {statsLocal.balancePendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        {/* Card Total Gasto */}
+        <div className="bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100/50 dark:border-rose-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-rose-50/60 dark:hover:bg-rose-950/15">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-700 dark:text-rose-455 mb-1 block">
+            💸 Total Gasto
+          </span>
+          <p className="text-base font-black tracking-tight text-rose-900 dark:text-rose-100">
+            R$ {statsLocal.totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+
+        {/* Card Saldo Total */}
+        <div className="col-span-2 sm:col-span-1 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100/50 dark:border-emerald-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-emerald-50/70 dark:hover:bg-emerald-950/15">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1 block">
+            💵 Saldo Total
+          </span>
+          <p className="text-base font-black tracking-tight text-emerald-900 dark:text-emerald-100">
+            R$ {statsLocal.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+          </p>
+        </div>
+      </div>
+
       {/* ADVANCED FILTER SECTION */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm transition-all duration-300">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -251,10 +332,9 @@ const Transacoes: React.FC<TransacoesProps> = ({
                     className="w-full px-3 py-2 bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/80 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-slate-700 dark:text-slate-100 cursor-pointer capitalize transition-all backdrop-blur-md"
                   >
                     <option value="todos" className="dark:bg-slate-900">Todas Categorias</option>
-                    {CATEGORIES.map(c => (
+                    {categories.map(c => (
                       <option key={c.id} value={c.id} className="dark:bg-slate-900">{c.name}</option>
                     ))}
-                    <option value="salario" className="dark:bg-slate-900">Salário</option>
                   </select>
                 </div>
 
@@ -337,13 +417,13 @@ const Transacoes: React.FC<TransacoesProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-55 dark:bg-slate-905 border-b border-slate-100 dark:border-slate-800/80">
-                  <th className="p-4 pl-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Tipo</th>
-                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Descrição</th>
-                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-left">Valor</th>
-                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Data</th>
-                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Categoria</th>
-                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider">Banco</th>
-                  <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center">Status</th>
+                  <th className="p-4 pl-6 font-black text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-[0.2em] bg-slate-50/30 dark:bg-slate-800/20 w-28 min-w-[112px] max-w-[112px]">Tipo</th>
+                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider min-w-[150px]">Descrição</th>
+                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-left w-32 min-w-[128px] max-w-[128px]">Valor</th>
+                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-32 min-w-[128px] max-w-[128px]">Data</th>
+                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-36 min-w-[144px] max-w-[144px]">Categoria</th>
+                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-28 min-w-[112px] max-w-[112px]">Banco</th>
+                  <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-28 min-w-[112px] max-w-[112px]">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -351,32 +431,35 @@ const Transacoes: React.FC<TransacoesProps> = ({
                   <tr 
                     key={t.id} 
                     onClick={() => setSelectedTransaction(t)}
-                    className={`transition-all duration-300 cursor-pointer ${getStatusColorClasses(t.status, true)}`}
+                    className="transition-all duration-300 cursor-pointer border-b border-slate-50 dark:border-slate-800/40 group"
                   >
-                <td className="p-4">
-                  <span 
+                <td className={`p-4 pl-6 transition-colors duration-300 font-bold w-28 min-w-[112px] max-w-[112px] ${
+                  t.type === 'entrada' 
+                    ? 'bg-emerald-50/50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400' 
+                    : 'bg-rose-50/50 dark:bg-rose-900/10 text-rose-600 dark:text-rose-400'
+                }`}>
+                  <div 
                     onClick={(e) => {
                       e.stopPropagation();
                       setTypeMenuTx(t);
                       setTypeMenuAnchor({ x: e.clientX, y: e.clientY });
                     }}
-                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase whitespace-nowrap cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all ${
-                      t.type === 'entrada' ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300'
-                    }`}
+                    className="flex items-center gap-2.5 cursor-pointer uppercase text-[10px] tracking-[0.1em]"
                     title="Trocar tipo de transação"
                   >
+                    <div className={`w-1.5 h-3 rounded-full ${t.type === 'entrada' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                     {t.type === 'entrada' ? 'Entrada' : 'Saída'}
-                  </span>
+                  </div>
                 </td>
-                <td className="p-4">
+                <td className={`p-4 transition-colors duration-300 min-w-[150px] ${getStatusColorClasses(t.status, true)}`}>
                   <div className="flex items-center gap-3">
                     {t.vaultId && (
                       <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter border border-indigo-200/50 dark:border-indigo-800/50 shrink-0">
                         Cofre
                       </span>
                     )}
-                    <span className="text-xl shrink-0 select-none" title={CATEGORIES.find(c => c.id === t.category)?.name || t.category}>
-                      {getCategoryIconAndStyle(t.category).icon}
+                    <span className="text-xl shrink-0 select-none" title={categories.find(c => c.id === t.category)?.name || t.category}>
+                      {categories.find(c => c.id === t.category)?.icon || getCategoryIconAndStyle(t.category).icon}
                     </span>
                     <div className="flex flex-col">
                       {inlineEdit?.id === t.id && inlineEdit?.field === 'description' ? (
@@ -398,7 +481,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                               setInlineEdit(null);
                             }
                           }}
-                          className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-48 animate-fade-in"
+                          className="px-2 py-0.5 text-sm font-semibold border-b-2 border-emerald-500 bg-white dark:bg-slate-800 rounded outline-none w-48 animate-fade-in"
                         />
                       ) : (
                         <span 
@@ -407,7 +490,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                             setInlineEdit({ id: t.id, field: 'description' });
                             setInlineValue(t.description);
                           }}
-                          className="font-semibold dark:text-slate-200 cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80 flex items-center gap-2"
+                          className="font-semibold text-slate-800 dark:text-slate-200 cursor-pointer hover:underline decoration-dotted decoration-emerald-500/80 flex items-center gap-2"
                           title="Clique para editar descrição"
                         >
                           {t.description}
@@ -417,7 +500,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                     </div>
                   </div>
                 </td>
-                <td className={`p-4 text-sm font-bold text-left whitespace-nowrap ${t.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                <td className={`p-4 text-sm font-bold text-left whitespace-nowrap transition-colors duration-300 w-32 min-w-[128px] max-w-[128px] ${getStatusColorClasses(t.status, true)} ${t.type === 'entrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}>
                   {inlineEdit?.id === t.id && inlineEdit?.field === 'value' ? (
                     <input
                       type="text"
@@ -437,7 +520,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                           setInlineEdit(null);
                         }
                       }}
-                      className="px-2 py-0.5 text-xs text-left font-bold border-b-2 border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none w-24"
+                      className="px-2 py-0.5 text-xs text-left font-bold border-b-2 border-emerald-500 bg-white dark:bg-slate-800 rounded outline-none w-24"
                     />
                   ) : (
                     <span 
@@ -453,7 +536,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                     </span>
                   )}
                 </td>
-                <td className="p-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                <td className={`p-4 text-sm text-slate-600 dark:text-slate-400 whitespace-nowrap transition-colors duration-300 w-32 min-w-[128px] max-w-[128px] ${getStatusColorClasses(t.status, true)}`}>
                   {inlineEdit?.id === t.id && inlineEdit?.field === 'date' ? (
                     <input
                       type="date"
@@ -473,7 +556,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                           setInlineEdit(null);
                         }
                       }}
-                      className="px-1.5 py-0.5 text-xs border-b border-emerald-500 bg-slate-100 dark:bg-slate-800 rounded outline-none"
+                      className="px-1.5 py-0.5 text-xs border-b border-emerald-500 bg-white dark:bg-slate-800 rounded outline-none"
                     />
                   ) : (
                     <span 
@@ -489,33 +572,33 @@ const Transacoes: React.FC<TransacoesProps> = ({
                     </span>
                   )}
                 </td>
-                <td className="p-4">
+                <td className={`p-4 transition-colors duration-300 w-36 min-w-[144px] max-w-[144px] ${getStatusColorClasses(t.status, true)}`}>
                   <span 
                     onClick={(e) => {
                       e.stopPropagation();
                       setCategoryMenuTx(t);
                       setCategoryMenuAnchor({ x: e.clientX, y: e.clientY });
                     }}
-                    className="px-2 py-1 bg-slate-100/60 dark:bg-slate-800/60 hover:bg-slate-200/60 dark:hover:bg-slate-700/70 rounded text-xs font-semibold text-slate-600 dark:text-slate-400 capitalize cursor-pointer hover:ring-2 hover:ring-emerald-500/30 transition-all whitespace-nowrap"
+                    className="px-2 py-1 bg-white/40 dark:bg-slate-800/60 hover:bg-white/60 dark:hover:bg-slate-700/70 rounded text-xs font-semibold text-slate-600 dark:text-slate-400 capitalize cursor-pointer hover:ring-2 hover:ring-emerald-500/30 transition-all whitespace-nowrap"
                     title="Mudar categoria"
                   >
-                    {CATEGORIES.find(c => c.id === t.category)?.name || t.category}
+                    {categories.find(c => c.id === t.category)?.name || t.category}
                   </span>
                 </td>
-                <td className="p-4 text-sm font-medium whitespace-nowrap dark:text-slate-300">
+                <td className={`p-4 text-sm font-medium whitespace-nowrap dark:text-slate-300 transition-colors duration-300 w-28 min-w-[112px] max-w-[112px] ${getStatusColorClasses(t.status, true)}`}>
                   <span 
                     onClick={(e) => {
                       e.stopPropagation();
                       setBankMenuTx(t);
                       setBankMenuAnchor({ x: e.clientX, y: e.clientY });
                     }}
-                    className="cursor-pointer hover:text-emerald-500 hover:underline px-1.5 py-1 rounded transition-all hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="cursor-pointer hover:text-emerald-500 hover:underline px-1.5 py-1 rounded transition-all hover:bg-white/50 dark:hover:bg-slate-800/80"
                     title="Alterar banco"
                   >
                     {t.bank}
                   </span>
                 </td>
-                <td className="p-4 text-center">
+                <td className={`p-4 text-center pr-6 transition-colors duration-300 w-28 min-w-[112px] max-w-[112px] ${getStatusColorClasses(t.status, true)}`}>
                   <span 
                     onClick={(e) => {
                       e.stopPropagation();

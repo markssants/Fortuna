@@ -112,6 +112,18 @@ service cloud.firestore {
         && data.userId == userId;
     }
 
+    function isValidCategory(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.icon is string
+        && data.icon.size() <= 32
+        && data.color is string
+        && data.color.size() <= 32
+        && data.userId == userId;
+    }
+
     // 4. Matches & Path Definitions
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -125,6 +137,14 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(transactionId) && isValidTransaction(incoming(), userId);
         allow update: if isOwner(userId) && isValidId(transactionId) && isValidTransaction(incoming(), userId);
         allow delete: if isOwner(userId) && isValidId(transactionId);
+      }
+
+      // Subcollection for Categories
+      match /categories/{categoryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(categoryId) && isValidCategory(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(categoryId) && isValidCategory(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(categoryId);
       }
 
       // Subcollection for Budgets

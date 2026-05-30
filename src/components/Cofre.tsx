@@ -55,6 +55,7 @@ interface CofreProps {
   vaults: Vault[];
   setVaults: React.Dispatch<React.SetStateAction<Vault[]>>;
   transactions: any[];
+  setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
   handleDeleteTransaction: (id: string) => Promise<void>;
   handleUpdateTransaction: (transaction: any) => Promise<void>;
   user: any;
@@ -65,6 +66,7 @@ export default function Cofre({
   vaults, 
   setVaults, 
   transactions,
+  setTransactions,
   handleDeleteTransaction,
   handleUpdateTransaction,
   user, 
@@ -136,8 +138,29 @@ export default function Cofre({
       createdAt: new Date().toISOString()
     };
 
+    // Construct the initial transaction if any
+    const txId = `vtx-${Date.now()}`;
+    const initialTx = currentVal > 0 ? {
+      id: txId,
+      type: 'saida',
+      value: currentVal,
+      date: new Date().toISOString().split('T')[0],
+      category: 'cofre',
+      bank: 'Dinheiro',
+      method: 'Transferência',
+      description: `Depósito inicial: ${newName}`,
+      essential: false,
+      status: 'pago',
+      recurring: false,
+      userId: user?.uid,
+      vaultId: vaultId
+    } as any : null;
+
     // Optimistic Update
     setVaults(prev => [newVault, ...prev]);
+    if (initialTx) {
+      setTransactions(prev => [initialTx, ...prev]);
+    }
 
     const path = getVaultsPath();
     if (path) {
@@ -145,24 +168,9 @@ export default function Cofre({
         await setDoc(doc(db, path, vaultId), newVault);
         
         // Sync with main transactions
-        if (currentVal > 0) {
-          const txId = `vtx-${Date.now()}`;
+        if (initialTx && user) {
           const txPath = `users/${user.uid}/transactions`;
-          await setDoc(doc(db, txPath, txId), {
-            id: txId,
-            type: 'saida',
-            value: currentVal,
-            date: new Date().toISOString().split('T')[0],
-            category: 'outros',
-            bank: 'Dinheiro',
-            method: 'Transferência',
-            description: `Depósito inicial: ${newName}`,
-            essential: false,
-            status: 'pago',
-            recurring: false,
-            userId: user.uid,
-            vaultId: vaultId // LINKED!
-          });
+          await setDoc(doc(db, txPath, txId), initialTx);
         }
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `${path}/${vaultId}`);
@@ -179,13 +187,22 @@ export default function Cofre({
   };
 
   const handleDeleteVault = async (id: string) => {
+    // Also delete linked transactions as requested ("linkado", "apagou em um apaga no outro")
+    const linkedTxs = transactions.filter(t => t.vaultId === id);
+    
     // Optimistic Update
     setVaults(prev => prev.filter(v => v.id !== id));
+    setTransactions(prev => prev.filter(t => t.vaultId !== id));
 
     const path = getVaultsPath();
-    if (path) {
+    if (path && user) {
       try {
         await deleteDoc(doc(db, path, id));
+        // Cleanup transactions in Firestore too
+        const txPath = `users/${user.uid}/transactions`;
+        for (const tx of linkedTxs) {
+          await deleteDoc(doc(db, txPath, tx.id));
+        }
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `${path}/${id}`);
       }
@@ -216,33 +233,35 @@ export default function Cofre({
     }
 
     const updatedVault = { ...selectedVault, currentValue: newCurrent };
+    const txId = `vtx-${Date.now()}`;
+    const syncTx = {
+      id: txId,
+      type: updateType === 'deposit' ? 'saida' : 'entrada',
+      value: amount,
+      date: updateDate,
+      category: 'cofre',
+      bank: 'Dinheiro',
+      method: 'Transferência',
+      description: `${updateType === 'deposit' ? 'Depósito' : 'Resgate'}: ${selectedVault.name}`,
+      essential: false,
+      status: 'pago',
+      recurring: false,
+      userId: user?.uid,
+      vaultId: selectedVault.id
+    };
 
-    // Optimistic Update
+    // Optimistic / Local Update
     setVaults(prev => prev.map(v => v.id === selectedVault.id ? updatedVault : v));
+    setTransactions(prev => [syncTx, ...prev]);
 
     const path = getVaultsPath();
-    if (path) {
+    if (path && user) {
       try {
         await setDoc(doc(db, path, selectedVault.id), updatedVault);
         
         // Sync with main transactions - This creates the "Log"
-        const txId = `vtx-${Date.now()}`;
         const txPath = `users/${user.uid}/transactions`;
-        await setDoc(doc(db, txPath, txId), {
-          id: txId,
-          type: updateType === 'deposit' ? 'saida' : 'entrada',
-          value: amount,
-          date: updateDate,
-          category: 'outros',
-          bank: 'Dinheiro',
-          method: 'Transferência',
-          description: `${updateType === 'deposit' ? 'Depósito' : 'Resgate'}: ${selectedVault.name}`,
-          essential: false,
-          status: 'pago',
-          recurring: false,
-          userId: user.uid,
-          vaultId: selectedVault.id // LINKED!
-        });
+        await setDoc(doc(db, txPath, txId), syncTx);
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `${path}/${selectedVault.id}`);
       }
