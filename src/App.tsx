@@ -778,33 +778,56 @@ export default function App() {
   };
 
   const handleQuickPayConta = async (conta: Conta) => {
-    const transactionId = String(Date.now());
+    const transactionId = conta.id;
     const currentDate = new Date().toISOString().split('T')[0];
 
-    const transaction = {
-      id: transactionId,
-      type: 'saida',
-      value: conta.value,
-      date: currentDate,
-      category: conta.category,
-      bank: conta.bank,
-      method: 'Boleto',
-      description: `Conta paga: ${conta.name}`,
-      essential: true,
-      status: 'pago',
-      recurring: false,
-      userId: user ? user.uid : 'demo'
-    };
+    // Find if we have an existing transaction for this bill/conta
+    const existingTx = transactions.find(t => t.id === conta.id || t.linkedContaId === conta.id);
 
-    if (user) {
-      const path = `users/${user.uid}/transactions`;
-      try {
-        await setDoc(doc(db, path, transactionId), transaction);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
+    if (existingTx) {
+      const updatedTx = {
+        ...existingTx,
+        status: 'pago'
+      };
+
+      if (user) {
+        const path = `users/${user.uid}/transactions`;
+        try {
+          await setDoc(doc(db, path, existingTx.id), updatedTx);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `${path}/${existingTx.id}`);
+        }
+      } else {
+        setTransactions(prev => prev.map(t => t.id === existingTx.id ? updatedTx : t));
       }
     } else {
-      setTransactions(prev => [transaction, ...prev]);
+      // Fallback: create a new paid transaction linked to the bill
+      const transaction = {
+        id: transactionId,
+        type: 'saida',
+        value: conta.value,
+        date: currentDate,
+        category: conta.category,
+        bank: conta.bank,
+        method: 'Boleto',
+        description: `Conta: ${conta.name}`,
+        essential: true,
+        status: 'pago',
+        recurring: false,
+        userId: user ? user.uid : 'demo',
+        linkedContaId: conta.id
+      };
+
+      if (user) {
+        const path = `users/${user.uid}/transactions`;
+        try {
+          await setDoc(doc(db, path, transactionId), transaction);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
+        }
+      } else {
+        setTransactions(prev => [transaction, ...prev]);
+      }
     }
   };
 
@@ -812,11 +835,20 @@ export default function App() {
     const transactionToDelete = transactions.find(t => t.id === id);
     if (!transactionToDelete) return;
     
+    // Bidirectional sync: check if there is a linked bill (Conta) and delete it
+    const contaId = transactionToDelete.linkedContaId || id;
+    const hasMatchingConta = contas.some(c => c.id === contaId);
+
     if (user) {
       const path = `users/${user.uid}/transactions`;
       try {
         await deleteDoc(doc(db, path, id));
         
+        // Delete corresponding bill from DB
+        if (hasMatchingConta) {
+          await deleteDoc(doc(db, `users/${user.uid}/contas`, contaId));
+        }
+
         // Update vault balance if linked
         if (transactionToDelete.vaultId) {
           const vault = vaults.find(v => v.id === transactionToDelete.vaultId);
@@ -838,6 +870,11 @@ export default function App() {
     } else {
       setTransactions(prev => prev.filter(t => t.id !== id));
       
+      // Delete corresponding bill from local state
+      if (hasMatchingConta) {
+        setContas(prev => prev.filter(c => c.id !== contaId));
+      }
+
       // Local sync for vaults if in demo/local mode
       if (transactionToDelete.vaultId) {
         const vault = vaults.find(v => v.id === transactionToDelete.vaultId);
@@ -903,6 +940,37 @@ export default function App() {
       ...updatedTransaction,
       value: isNaN(valFloat) ? 0 : valFloat
     };
+
+    // Bidirectional sync: if this transaction is linked to a Conta, update the Conta!
+    const contaId = finalTransaction.linkedContaId || finalTransaction.id;
+    const matchingConta = contas.find(c => c.id === contaId);
+
+    if (matchingConta) {
+      let descName = finalTransaction.description;
+      if (descName.startsWith('Conta: ')) {
+        descName = descName.substring(7);
+      }
+      
+      const updatedConta = {
+        ...matchingConta,
+        name: descName,
+        value: finalTransaction.value,
+        dueDate: finalTransaction.date,
+        category: finalTransaction.category,
+        bank: finalTransaction.bank,
+        status: finalTransaction.status as 'pago' | 'pendente' | 'atrasado'
+      };
+
+      if (user) {
+        try {
+          await setDoc(doc(db, `users/${user.uid}/contas`, contaId), updatedConta);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/contas/${contaId}`);
+        }
+      } else {
+        setContas(prev => prev.map(c => c.id === contaId ? updatedConta : c));
+      }
+    }
 
     if (user) {
       const path = `users/${user.uid}/transactions`;
@@ -979,15 +1047,30 @@ export default function App() {
 
   const handleQuickStatusChange = async (transaction: any, newStatus: string) => {
     const updated = { ...transaction, status: newStatus };
+    
+    // Bidirectional sync: if this transaction is linked to a Conta, update the Conta's status!
+    const contaId = updated.linkedContaId || updated.id;
+    const matchingConta = contas.find(c => c.id === contaId);
+
     if (user) {
       const path = `users/${user.uid}/transactions`;
       try {
         await setDoc(doc(db, path, updated.id), updated);
+        
+        if (matchingConta) {
+          const updatedConta = { ...matchingConta, status: newStatus as any };
+          await setDoc(doc(db, `users/${user.uid}/contas`, contaId), updatedConta);
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `${path}/${updated.id}`);
       }
     } else {
       setTransactions(transactions.map(t => t.id === updated.id ? updated : t));
+      
+      if (matchingConta) {
+        const updatedConta = { ...matchingConta, status: newStatus as any };
+        setContas(prev => prev.map(c => c.id === contaId ? updatedConta : c));
+      }
     }
     setStatusMenuTx(null);
     setStatusMenuAnchor(null);
@@ -1000,11 +1083,30 @@ export default function App() {
       finalValue = isNaN(valFloat) ? 0 : valFloat;
     }
     const updated = { ...transaction, [field]: finalValue };
+
+    // Bidirectional sync: check if there is a linked bill (Conta) and update it
+    const contaId = updated.linkedContaId || updated.id;
+    const matchingConta = contas.find(c => c.id === contaId);
+
     if (user) {
       const path = `users/${user.uid}/transactions`;
       try {
         await setDoc(doc(db, path, updated.id), updated);
         
+        if (matchingConta) {
+          // Map transaction fields to Conta fields
+          let contaField = field;
+          let contaValue = finalValue;
+          if (field === 'description') {
+            contaField = 'name';
+            contaValue = finalValue.startsWith('Conta: ') ? finalValue.substring(7) : finalValue;
+          } else if (field === 'date') {
+            contaField = 'dueDate';
+          }
+          const updatedConta = { ...matchingConta, [contaField]: contaValue };
+          await setDoc(doc(db, `users/${user.uid}/contas`, contaId), updatedConta);
+        }
+
         // Sync vault balance if linked and value/type changed
         if (updated.vaultId && (field === 'value' || field === 'type')) {
           const vault = vaults.find(v => v.id === updated.vaultId);
@@ -1026,6 +1128,19 @@ export default function App() {
     } else {
       setTransactions(transactions.map(t => t.id === updated.id ? updated : t));
       
+      if (matchingConta) {
+        let contaField = field;
+        let contaValue = finalValue;
+        if (field === 'description') {
+          contaField = 'name';
+          contaValue = finalValue.startsWith('Conta: ') ? finalValue.substring(7) : finalValue;
+        } else if (field === 'date') {
+          contaField = 'dueDate';
+        }
+        const updatedConta = { ...matchingConta, [contaField]: contaValue };
+        setContas(prev => prev.map(c => c.id === contaId ? updatedConta : c));
+      }
+
       if (updated.vaultId && (field === 'value' || field === 'type')) {
         const vault = vaults.find(v => v.id === updated.vaultId);
         if (vault) {
@@ -2134,6 +2249,8 @@ export default function App() {
             <Contas 
               contas={contas} 
               setContas={setContas} 
+              transactions={transactions}
+              setTransactions={setTransactions}
               user={user} 
               theme={theme}
               onQuickPay={handleQuickPayConta}

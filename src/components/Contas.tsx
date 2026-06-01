@@ -17,7 +17,8 @@ import {
   Clock,
   ExternalLink,
   SlidersHorizontal,
-  X
+  X,
+  Pencil
 } from 'lucide-react';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, OperationType, handleFirestoreError } from '../firebase';
@@ -48,15 +49,32 @@ const CATEGORIES = [
 
 const BANKS = ['Nubank', 'Itaú', 'Inter', 'Bradesco', 'Santander', 'Dinheiro', 'C6 Bank', 'Outro'];
 
+function cleanContaForFirestore(conta: Conta): any {
+  const cleaned: any = { ...conta };
+  if (cleaned.barcode === undefined) delete cleaned.barcode;
+  if (cleaned.notes === undefined) delete cleaned.notes;
+  return cleaned;
+}
+
 interface ContasProps {
   contas: Conta[];
   setContas: React.Dispatch<React.SetStateAction<Conta[]>>;
   user: any;
   theme: 'light' | 'dark';
   onQuickPay?: (conta: Conta) => void;
+  transactions?: any[];
+  setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
-export default function Contas({ contas, setContas, user, theme, onQuickPay }: ContasProps) {
+export default function Contas({ 
+  contas, 
+  setContas, 
+  user, 
+  theme, 
+  onQuickPay,
+  transactions,
+  setTransactions
+}: ContasProps) {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [contaToDelete, setContaToDelete] = useState<Conta | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,6 +93,98 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
   const [bank, setBank] = useState('Nubank');
   const [barcode, setBarcode] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Detailed view & edit states
+  const [selectedConta, setSelectedConta] = useState<Conta | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Edit form states
+  const [editName, setEditName] = useState('');
+  const [editValue, setEditValue] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editBank, setEditBank] = useState('');
+  const [editBarcode, setEditBarcode] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editStatus, setEditStatus] = useState<'pendente' | 'pago' | 'atrasado'>('pendente');
+
+  const handleOpenDetails = (item: Conta) => {
+    setSelectedConta(item);
+    setIsEditMode(false);
+    setEditName(item.name);
+    setEditValue(item.value.toString());
+    setEditDueDate(item.dueDate);
+    setEditCategory(item.category);
+    setEditBank(item.bank);
+    setEditBarcode(item.barcode || '');
+    setEditNotes(item.notes || '');
+    setEditStatus(item.status);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedConta) return;
+
+    const parsedValue = parseFloat(editValue) || 0;
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    let newStatus = editStatus;
+    if (newStatus !== 'pago') {
+      newStatus = editDueDate < todayStr ? 'atrasado' : 'pendente';
+    }
+
+    const updated: Conta = {
+      ...selectedConta,
+      name: editName,
+      value: parsedValue,
+      dueDate: editDueDate,
+      category: editCategory,
+      bank: editBank,
+      barcode: editBarcode.trim() || undefined,
+      notes: editNotes.trim() || undefined,
+      status: newStatus
+    };
+
+    // Optimistic Update
+    setContas(prev => prev.map(c => c.id === selectedConta.id ? updated : c));
+
+    // Synchronize to the linked transaction
+    const updatedTransaction = {
+      id: selectedConta.id,
+      type: 'saida',
+      value: parsedValue,
+      date: editDueDate,
+      category: editCategory,
+      bank: editBank,
+      method: 'Boleto',
+      description: `Conta: ${editName}`,
+      essential: true,
+      status: newStatus,
+      recurring: false,
+      userId: user?.uid || '',
+      linkedContaId: selectedConta.id
+    };
+
+    if (setTransactions) {
+      setTransactions(prev => prev.map(t => (t.id === selectedConta!.id || t.linkedContaId === selectedConta!.id) ? updatedTransaction : t));
+    }
+
+    setSelectedConta(null);
+    setIsEditMode(false);
+
+    const path = getPath();
+    if (path) {
+      try {
+        await setDoc(doc(db, path, selectedConta.id), cleanContaForFirestore(updated));
+        
+        // Also update the matching transaction in the user's transactions subcollection
+        const transactionsPath = `users/${user.uid}/transactions`;
+        await setDoc(doc(db, transactionsPath, selectedConta.id), updatedTransaction);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `${path}/${selectedConta.id}`);
+      }
+    }
+  };
 
   const getPath = () => {
     return user ? `users/${user.uid}/contas` : null;
@@ -108,10 +218,35 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
     // Optimistic Update
     setContas(prev => [newConta, ...prev]);
 
+    // Create matching transaction
+    const newTransaction = {
+      id, // matching ID for simple cross-reference
+      type: 'saida',
+      value: parsedValue,
+      date: dueDate,
+      category,
+      bank,
+      method: 'Boleto',
+      description: `Conta: ${name}`,
+      essential: true,
+      status: initialStatus,
+      recurring: false,
+      userId: user?.uid || '',
+      linkedContaId: id
+    };
+
+    if (setTransactions) {
+      setTransactions(prev => [newTransaction, ...prev]);
+    }
+
     const path = getPath();
     if (path) {
       try {
-        await setDoc(doc(db, path, id), newConta);
+        await setDoc(doc(db, path, id), cleanContaForFirestore(newConta));
+        
+        // Save the linked transaction in transactions subcollection as well!
+        const transactionsPath = `users/${user.uid}/transactions`;
+        await setDoc(doc(db, transactionsPath, id), newTransaction);
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `${path}/${id}`);
       }
@@ -135,10 +270,43 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
     // Optimistic Update
     setContas(prev => prev.map(c => c.id === item.id ? updated : c));
 
+    if (setTransactions) {
+      setTransactions(prev => prev.map(t => {
+        if (t.id === item.id || t.linkedContaId === item.id) {
+          return { ...t, status: newStatus };
+        }
+        return t;
+      }));
+    }
+
     const path = getPath();
     if (path) {
       try {
-        await setDoc(doc(db, path, item.id), updated);
+        await setDoc(doc(db, path, item.id), cleanContaForFirestore(updated));
+
+        // Also update the matching transaction status
+        const transactionsPath = `users/${user.uid}/transactions`;
+        const matchingTx = transactions?.find(t => t.id === item.id || t.linkedContaId === item.id);
+        if (matchingTx) {
+          await setDoc(doc(db, transactionsPath, matchingTx.id), { ...matchingTx, status: newStatus });
+        } else {
+          const updatedTxDoc = {
+            id: item.id,
+            type: 'saida',
+            value: item.value,
+            date: item.dueDate,
+            category: item.category,
+            bank: item.bank,
+            method: 'Boleto',
+            description: `Conta: ${item.name}`,
+            essential: true,
+            status: newStatus,
+            recurring: false,
+            userId: user?.uid || '',
+            linkedContaId: item.id
+          };
+          await setDoc(doc(db, transactionsPath, item.id), updatedTxDoc);
+        }
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `${path}/${item.id}`);
       }
@@ -146,7 +314,7 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
   };
 
   const handleQuickPayAction = async (item: Conta) => {
-    // 1. If we have onQuickPay callback, execute it (logs a transaction automatically!)
+    // 1. If we have onQuickPay callback, execute it (logs or updates a transaction automatically!)
     if (onQuickPay) {
       onQuickPay(item);
     }
@@ -155,10 +323,43 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
     const updated = { ...item, status: 'pago' as const };
     setContas(prev => prev.map(c => c.id === item.id ? updated : c));
 
+    if (setTransactions) {
+      setTransactions(prev => prev.map(t => {
+        if (t.id === item.id || t.linkedContaId === item.id) {
+          return { ...t, status: 'pago' };
+        }
+        return t;
+      }));
+    }
+
     const path = getPath();
     if (path) {
       try {
-        await setDoc(doc(db, path, item.id), updated);
+        await setDoc(doc(db, path, item.id), cleanContaForFirestore(updated));
+
+        // Also update matching transaction in database to be marked 'pago'
+        const transactionsPath = `users/${user.uid}/transactions`;
+        const matchingTx = transactions?.find(t => t.id === item.id || t.linkedContaId === item.id);
+        if (matchingTx) {
+          await setDoc(doc(db, transactionsPath, matchingTx.id), { ...matchingTx, status: 'pago' });
+        } else {
+          const updatedTxDoc = {
+            id: item.id,
+            type: 'saida',
+            value: item.value,
+            date: item.dueDate,
+            category: item.category,
+            bank: item.bank,
+            method: 'Boleto',
+            description: `Conta: ${item.name}`,
+            essential: true,
+            status: 'pago',
+            recurring: false,
+            userId: user?.uid || '',
+            linkedContaId: item.id
+          };
+          await setDoc(doc(db, transactionsPath, item.id), updatedTxDoc);
+        }
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `${path}/${item.id}`);
       }
@@ -169,10 +370,18 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
     // Optimistic Update
     setContas(prev => prev.filter(c => c.id !== id));
 
+    if (setTransactions) {
+      setTransactions(prev => prev.filter(t => t.id !== id && t.linkedContaId !== id));
+    }
+
     const path = getPath();
     if (path) {
       try {
         await deleteDoc(doc(db, path, id));
+
+        // Also delete transaction with same id or matching linkedContaId
+        const transactionsPath = `users/${user.uid}/transactions`;
+        await deleteDoc(doc(db, transactionsPath, id));
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `${path}/${id}`);
       }
@@ -357,7 +566,7 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
 
         {/* Status Filters & Sorters */}
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto justify-end">
-          <div className="flex bg-slate-150 dark:bg-slate-955 p-1 rounded-2xl w-full sm:w-auto font-black shadow-xs text-xs">
+          <div className="flex bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl w-full sm:w-auto font-black shadow-xs text-xs">
             <button
               onClick={() => setFilterStatus('todas')}
               className={`flex-1 sm:flex-initial px-3.5 py-2 rounded-xl transition-all text-center cursor-pointer ${filterStatus === 'todas' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-3xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
@@ -427,13 +636,14 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
               <motion.div 
                 key={item.id}
                 layout
-                className={`bg-white dark:bg-slate-900 rounded-[1.8rem] border shadow-xs p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 group/item ${
+                className={`bg-white dark:bg-slate-900 rounded-[1.8rem] border shadow-xs p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 group/item cursor-pointer ${
                   isPaid 
                     ? 'border-slate-100 dark:border-slate-920 opacity-70 hover:opacity-100' 
                     : isOverdue 
                     ? 'border-rose-100/50 dark:border-rose-950/30 hover:shadow-md' 
                     : 'border-slate-100 dark:border-slate-800/80 hover:border-slate-200 hover:shadow-md'
                 }`}
+                onClick={() => handleOpenDetails(item)}
               >
                 {/* Visual Aura for status */}
                 {!isPaid && isOverdue && (
@@ -463,7 +673,7 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
                     <div className="flex items-center gap-1">
                       {/* Toggle payed status indicator */}
                       <button
-                        onClick={() => toggleStatus(item)}
+                        onClick={(e) => { e.stopPropagation(); toggleStatus(item); }}
                         className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
                           isPaid 
                             ? 'bg-emerald-50 hover:bg-emerald-100/80 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30 text-emerald-600' 
@@ -475,7 +685,7 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
                       </button>
                       
                       <button
-                        onClick={() => setContaToDelete(item)}
+                        onClick={(e) => { e.stopPropagation(); setContaToDelete(item); }}
                         className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-300 hover:text-rose-500 rounded-lg cursor-pointer transition-colors"
                         title="Remover Conta"
                       >
@@ -514,7 +724,7 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
                         <div className="flex items-center justify-between gap-2 text-slate-500 dark:text-slate-450">
                           <span className="font-mono truncate select-all">{item.barcode}</span>
                           <button
-                            onClick={() => copyToClipboard(item.barcode!, item.id)}
+                            onClick={(e) => { e.stopPropagation(); copyToClipboard(item.barcode!, item.id); }}
                             className="p-1 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 rounded-md transition-colors text-indigo-650 dark:text-indigo-400 cursor-pointer flex items-center gap-0.5 shrink-0"
                             title="Copiar código de barras"
                           >
@@ -543,7 +753,7 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
 
                   {!isPaid && (
                     <button
-                      onClick={() => handleQuickPayAction(item)}
+                      onClick={(e) => { e.stopPropagation(); handleQuickPayAction(item); }}
                       className="px-3.5 py-2 bg-indigo-50 dark:bg-indigo-950/25 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 font-black rounded-xl text-[10px] whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
                       <CheckCircle2 size={12} /> Pagar Conta
@@ -740,6 +950,290 @@ export default function Contas({ contas, setContas, user, theme, onQuickPay }: C
                   Confirmar Exclusão
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DETAILED VIEW & EDIT MODAL */}
+      <AnimatePresence>
+        {selectedConta && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setSelectedConta(null);
+                setIsEditMode(false);
+              }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
+            >
+              {/* modal header */}
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-black dark:text-white flex items-center gap-2">
+                  <span>📄</span> {isEditMode ? 'Editar Conta/Boleto' : 'Detalhes do Boleto'}
+                </h3>
+                <div className="flex items-center gap-2">
+                  {!isEditMode && (
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="p-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black"
+                      title="Editar dados"
+                    >
+                      <Pencil size={12} /> Editar
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => {
+                      setSelectedConta(null);
+                      setIsEditMode(false);
+                    }} 
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 cursor-pointer"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {!isEditMode ? (
+                /* VIEWING MODE CONTENT */
+                <div className="p-6 space-y-6">
+                  <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-950/30 p-4 rounded-3xl border border-slate-100/50 dark:border-slate-850/40">
+                    <div className="w-14 h-14 rounded-2.5xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center font-black text-2xl shadow-3xs">
+                      {getCategoryDetails(selectedConta.category).icon}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-405 uppercase tracking-widest text-[10px]">Beneficiário / Serviço</h4>
+                      <h3 className="text-base font-black text-slate-900 dark:text-white capitalize mt-0.5">{selectedConta.name}</h3>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 rounded-2.5xl border border-slate-100 dark:border-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Valor do Boleto</p>
+                      <p className="text-lg font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                        R$ {selectedConta.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50/50 dark:bg-slate-950/40 rounded-2.5xl border border-slate-100 dark:border-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Data do Vencimento</p>
+                      <p className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5 mt-1">
+                        <Calendar size={18} className="text-slate-400 shrink-0" /> {formatDate(selectedConta.dueDate)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Categoria</span>
+                      <span className="font-extrabold text-slate-800 dark:text-white bg-slate-150/40 dark:bg-slate-800 px-3 py-1 rounded-lg">
+                        {getCategoryDetails(selectedConta.category).name}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Banco / Método Saída</span>
+                      <span className="font-extrabold text-slate-800 dark:text-white bg-slate-150/40 dark:bg-slate-800 px-3 py-1 rounded-lg uppercase">
+                        {selectedConta.bank}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Estado Atual</span>
+                      <span className={`font-black px-3 py-1 rounded-lg ${
+                        selectedConta.status === 'pago' 
+                          ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-450' 
+                          : selectedConta.status === 'atrasado' 
+                          ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-450' 
+                          : 'bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-450'
+                      }`}>
+                        {selectedConta.status === 'pago' ? 'Pago' : selectedConta.status === 'atrasado' ? 'Atrasado' : 'A Vencer'}
+                      </span>
+                    </div>
+
+                    {selectedConta.barcode && (
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-850 space-y-1.5">
+                        <span className="text-slate-400 font-extrabold uppercase text-[10px] block">Código de Barras / Pix copia e cola</span>
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 rounded-2xl flex items-center justify-between gap-3 text-xs">
+                          <code className="font-mono text-[10px] break-all select-all text-slate-705 dark:text-slate-350 max-h-16 overflow-y-auto block pr-1 w-full">{selectedConta.barcode}</code>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(selectedConta.barcode!, selectedConta.id)}
+                            className="p-1.5 bg-white dark:bg-slate-900 border border-slate-155 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-805 rounded-lg transition-colors text-indigo-650 dark:text-indigo-400 cursor-pointer flex items-center gap-1 shrink-0"
+                            title="Copiar código de barras"
+                          >
+                            {copiedId === selectedConta.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                            <span className="font-extrabold text-[9px]">{copiedId === selectedConta.id ? 'Copiado!' : 'Copiar'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedConta.notes && (
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-850">
+                        <span className="text-slate-400 font-extrabold uppercase text-[10px] block mb-1">Anotações</span>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/10 p-3 rounded-2xl italic border border-slate-100/50 dark:border-slate-850/30">
+                          {selectedConta.notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    {selectedConta.status !== 'pago' && (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          handleQuickPayAction(selectedConta);
+                          setSelectedConta(null);
+                        }}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center flex items-center justify-center gap-1.5"
+                      >
+                        <CheckCircle2 size={14} /> Pagar Conta
+                      </button>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setSelectedConta(null);
+                        setIsEditMode(false);
+                      }}
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-750 dark:text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center"
+                    >
+                      Fechar Detalhes
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* EDITING MODE FORM */
+                <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Descrição / Beneficiário / Serviço</label>
+                    <input 
+                      type="text"
+                      required
+                      maxLength={100}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-500 transition-all font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Valor (R$)</label>
+                      <input 
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Vencimento</label>
+                      <input 
+                        type="date"
+                        required
+                        value={editDueDate}
+                        onChange={(e) => setEditDueDate(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-medium text-center text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Categoria</label>
+                      <select
+                        value={editCategory}
+                        onChange={(e) => setEditCategory(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold cursor-pointer font-extrabold text-xs"
+                      >
+                        {CATEGORIES.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Banco / Origem</label>
+                      <select
+                        value={editBank}
+                        onChange={(e) => setEditBank(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold cursor-pointer font-extrabold text-xs"
+                      >
+                        {BANKS.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Status da Conta</label>
+                      <select
+                        value={editStatus}
+                        onChange={(e) => setEditStatus(e.target.value as any)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold cursor-pointer font-extrabold text-xs"
+                      >
+                        <option value="pendente">A Vencer / Pendente</option>
+                        <option value="atrasado">Atrasada</option>
+                        <option value="pago">Paga</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Código de Barras / Copia-PIX (Opcional)</label>
+                    <input 
+                      type="text"
+                      maxLength={150}
+                      value={editBarcode}
+                      onChange={(e) => setEditBarcode(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800 rounded-xl p-3 text-xs dark:text-white outline-none focus:border-indigo-550 transition-all font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Observações (Opcional)</label>
+                    <textarea 
+                      maxLength={200}
+                      rows={2}
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800 rounded-xl p-3 text-xs dark:text-white outline-none focus:border-indigo-550 transition-all"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800/80">
+                    <button 
+                      type="button"
+                      onClick={() => setIsEditMode(false)}
+                      className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-500 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 text-xs cursor-pointer"
+                    >
+                      Voltar
+                    </button>
+                    <button 
+                      type="submit"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-black shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                    >
+                      Salvar Alterações
+                    </button>
+                  </div>
+                </form>
+              )}
             </motion.div>
           </div>
         )}

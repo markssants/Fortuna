@@ -14,7 +14,9 @@ import {
   Info,
   Layers,
   CheckCircle,
-  Clock
+  Clock,
+  Pencil,
+  X
 } from 'lucide-react';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, OperationType, handleFirestoreError } from '../firebase';
@@ -64,6 +66,57 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
   const [dueDate, setDueDate] = useState('10');
   const [category, setCategory] = useState('assinaturas');
   const [bank, setBank] = useState('Nubank');
+
+  // Detail & Edit Popup states
+  const [selectedRecorrente, setSelectedRecorrente] = useState<Recorrente | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editValue, setEditValue] = useState('');
+  const [editDueDate, setEditDueDate] = useState('10');
+  const [editCategory, setEditCategory] = useState('assinaturas');
+  const [editBank, setEditBank] = useState('Nubank');
+
+  const handleOpenDetails = (item: Recorrente) => {
+    setSelectedRecorrente(item);
+    setIsEditMode(false);
+    setEditName(item.name);
+    setEditValue(item.value.toString());
+    setEditDueDate(item.dueDate.toString());
+    setEditCategory(item.category);
+    setEditBank(item.bank);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRecorrente || !editName || !editValue) return;
+
+    const parsedValue = parseFloat(editValue) || 0;
+    const parsedDueDate = parseInt(editDueDate) || 1;
+
+    const updatedRecorrente: Recorrente = {
+      ...selectedRecorrente,
+      name: editName,
+      value: parsedValue,
+      dueDate: Math.max(1, Math.min(31, parsedDueDate)),
+      category: editCategory,
+      bank: editBank,
+    };
+
+    // Optimistic Update
+    setRecurrentes(prev => prev.map(r => r.id === selectedRecorrente.id ? updatedRecorrente : r));
+
+    const path = getPath();
+    if (path) {
+      try {
+        await setDoc(doc(db, path, selectedRecorrente.id), updatedRecorrente);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `${path}/${selectedRecorrente.id}`);
+      }
+    }
+
+    setSelectedRecorrente(null); // Close modal on save to give a clear success feel
+    setIsEditMode(false);
+  };
 
   const getPath = () => {
     return user ? `users/${user.uid}/recurrentes` : null;
@@ -316,11 +369,12 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
               <motion.div 
                 key={item.id}
                 layout
-                className={`bg-white dark:bg-slate-900 rounded-3xl border shadow-xs p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 group/item ${
+                className={`bg-white dark:bg-slate-900 rounded-3xl border shadow-xs p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 group/item cursor-pointer ${
                   isPaused 
                     ? 'border-slate-100 dark:border-slate-900 opacity-65 grayscale hover:grayscale-35' 
                     : 'border-slate-100 dark:border-slate-800/80 hover:border-slate-200 hover:shadow-md'
                 }`}
+                onClick={() => handleOpenDetails(item)}
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
@@ -342,7 +396,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
 
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => toggleStatus(item)}
+                        onClick={(e) => { e.stopPropagation(); toggleStatus(item); }}
                         className={`p-1.5 rounded-lg border text-slate-500 transition-colors cursor-pointer ${
                           isPaused 
                             ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30 text-emerald-600' 
@@ -354,7 +408,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                       </button>
                       
                       <button
-                        onClick={() => setRecorrenteToDelete(item)}
+                        onClick={(e) => { e.stopPropagation(); setRecorrenteToDelete(item); }}
                         className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-slate-300 hover:text-rose-500 rounded-lg cursor-pointer transition-colors"
                         title="Remover assinatura"
                       >
@@ -391,7 +445,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
 
                   {onQuickPay && !isPaused && (
                     <button
-                      onClick={() => onQuickPay(item)}
+                      onClick={(e) => { e.stopPropagation(); onQuickPay(item); }}
                       className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/25 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 font-black rounded-xl text-[10px] whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <CheckCircle size={10} /> Quitar / Registrar
@@ -565,6 +619,214 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                   Excluir Ativo
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DETAILED VIEW & EDIT MODAL */}
+      <AnimatePresence>
+        {selectedRecorrente && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setSelectedRecorrente(null);
+                setIsEditMode(false);
+              }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.2rem] shadow-2xl overflow-hidden relative z-10 border border-slate-100 dark:border-slate-800 transition-colors duration-300"
+            >
+              {/* modal header */}
+              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 className="text-lg font-black dark:text-white flex items-center gap-2">
+                  <span>🔁</span> {isEditMode ? 'Editar Recorrência' : 'Detalhes da Recorrência'}
+                </h3>
+                <div className="flex items-center gap-2">
+                  {!isEditMode && (
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-black"
+                      title="Editar dados"
+                    >
+                      <Pencil size={12} /> Editar
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => {
+                      setSelectedRecorrente(null);
+                      setIsEditMode(false);
+                    }} 
+                    className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors text-slate-400 cursor-pointer"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {!isEditMode ? (
+                /* VIEWING MODE CONTENT */
+                <div className="p-6 space-y-6">
+                  <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-950/30 p-4 rounded-3xl border border-slate-100/50 dark:border-slate-850/40">
+                    <div className="w-14 h-14 rounded-2.5xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center font-black text-2xl shadow-3xs">
+                      {selectedRecorrente.category === 'assinaturas' ? '📺' : '📦'}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-slate-405 uppercase tracking-widest text-[10px]">Serviço / Assinatura</h4>
+                      <h3 className="text-base font-black text-slate-900 dark:text-white capitalize mt-0.5">{selectedRecorrente.name}</h3>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-2.5xl border border-slate-100 dark:border-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Valor Mensal</p>
+                      <p className="text-lg font-black text-indigo-600 dark:text-indigo-400 mt-1">
+                        R$ {selectedRecorrente.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-2.5xl border border-slate-100 dark:border-slate-800">
+                      <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Dia de Cobrança</p>
+                      <p className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-1.5 mt-1">
+                        <Calendar size={18} className="text-slate-400" /> {selectedRecorrente.dueDate}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Categoria</span>
+                      <span className="font-extrabold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">
+                        {categoryLabels[selectedRecorrente.category] || selectedRecorrente.category}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Banco / Origem de Saída</span>
+                      <span className="font-extrabold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg uppercase">
+                        {selectedRecorrente.bank}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Status Operacional</span>
+                      <span className={`font-black px-3 py-1 rounded-lg ${
+                        selectedRecorrente.status === 'ativo' 
+                          ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-450' 
+                          : 'bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-450'
+                      }`}>
+                        {selectedRecorrente.status === 'ativo' ? 'Ativo' : 'Pausado'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setSelectedRecorrente(null);
+                        setIsEditMode(false);
+                      }}
+                      className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center"
+                    >
+                      Fechar Detalhes
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* EDITING MODE FORM */
+                <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+                  <div>
+                    <label className="text-xs font-extrabold uppercase text-slate-400 dark:text-slate-500 block mb-1.5">Descrição / Serviço</label>
+                    <input 
+                      type="text"
+                      required
+                      maxLength={100}
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-900/30 border border-slate-150 dark:border-slate-800 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-500 transition-all font-medium"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Valor Mensal (R$)</label>
+                      <input 
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Dia de Vencimento</label>
+                      <input 
+                        type="number"
+                        min="1"
+                        max="31"
+                        required
+                        value={editDueDate}
+                        onChange={(e) => setEditDueDate(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-medium text-center"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Categoria</label>
+                      <select
+                        value={editCategory}
+                        onChange={(e) => setEditCategory(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold cursor-pointer font-extrabold text-xs"
+                      >
+                        {CATEGORIES.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold uppercase text-slate-400 block mb-1.5">Banco de Origem</label>
+                      <select
+                        value={editBank}
+                        onChange={(e) => setEditBank(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-850 rounded-xl p-3 text-sm dark:text-white outline-none focus:border-indigo-550 transition-all font-bold cursor-pointer font-extrabold text-xs"
+                      >
+                        {BANKS.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800/80">
+                    <button 
+                      type="button"
+                      onClick={() => setIsEditMode(false)}
+                      className="flex-1 border border-slate-200 dark:border-slate-800 text-slate-500 py-3 rounded-xl font-bold hover:bg-slate-50 dark:hover:bg-slate-800 text-xs cursor-pointer"
+                    >
+                      Voltar
+                    </button>
+                    <button 
+                      type="submit"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-black shadow-md shadow-indigo-500/10 active:scale-[0.98] transition-all text-xs cursor-pointer"
+                    >
+                      Salvar Alterações
+                    </button>
+                  </div>
+                </form>
+              )}
             </motion.div>
           </div>
         )}
