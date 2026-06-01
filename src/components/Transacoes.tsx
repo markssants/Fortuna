@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Minus, Search, X, Filter, ChevronUp, ChevronDown, Copy } from 'lucide-react';
+import { Plus, Minus, Search, X, Filter, ChevronUp, ChevronDown, Copy, MoreHorizontal, Trash2, ArrowUpDown } from 'lucide-react';
 import { CATEGORIES, BANKS, getCategoryIconAndStyle, formatDateDisplay, getStatusColorClasses } from '../constants';
 
 interface Transaction {
@@ -36,6 +36,7 @@ interface TransacoesProps {
   inlineValue: string;
   setInlineValue: (value: string) => void;
   onDuplicateTransaction: (tx: Transaction) => void;
+  onDeleteTransaction?: (id: string) => void;
 }
 
 const Transacoes: React.FC<TransacoesProps> = ({
@@ -56,6 +57,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
   inlineValue,
   setInlineValue,
   onDuplicateTransaction,
+  onDeleteTransaction,
 }) => {
   // Filter states moved from App.tsx
   const [boxFilter, setBoxFilter] = useState<'todos' | 'em_conta' | 'futuro' | 'pendente' | 'total_gasto' | 'saldo_total'>('todos');
@@ -68,6 +70,13 @@ const Transacoes: React.FC<TransacoesProps> = ({
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('todos');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
+
+  // Action Menu state
+  const [actionsMenuTx, setActionsMenuTx] = useState<Transaction | null>(null);
+  const [actionsMenuAnchor, setActionsMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  
+  // Date sorting state
+  const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc'>('desc');
   
   // Removed local inline edit states as they are now props
 
@@ -98,7 +107,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
   }, [transactions]);
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    const list = transactions.filter(t => {
       // 0. Box Filter
       if (boxFilter === 'em_conta') {
         if (t.status !== 'pago') return false;
@@ -139,7 +148,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
       }
       return true;
     });
-  }, [transactions, boxFilter, typeFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter, txSearchQuery]);
+
+    // Sort by date based on dateSortOrder
+    list.sort((a, b) => {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      const cmp = dateSortOrder === 'desc' ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB);
+      if (cmp !== 0) return cmp;
+      return b.id.localeCompare(a.id); // stability
+    });
+
+    return list;
+  }, [transactions, boxFilter, typeFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter, txSearchQuery, dateSortOrder]);
 
   const activeFiltersCount = useMemo(() => {
     return (boxFilter !== 'todos' ? 1 : 0) +
@@ -481,11 +501,27 @@ const Transacoes: React.FC<TransacoesProps> = ({
                   <th className="p-4 pl-6 font-black text-slate-500 dark:text-slate-400 text-[10px] uppercase tracking-[0.2em] bg-slate-50/30 dark:bg-slate-800/20 w-28 min-w-[112px] max-w-[112px]">Tipo</th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider min-w-[150px]">Descrição</th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-left w-32 min-w-[128px] max-w-[128px]">Valor</th>
-                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-32 min-w-[128px] max-w-[128px]">Data</th>
+                  <th 
+                    onClick={() => setDateSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                    className="p-4 font-bold text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 text-[10px] uppercase tracking-wider w-32 min-w-[128px] max-w-[128px] cursor-pointer select-none transition-all group/date-header"
+                    title={dateSortOrder === 'desc' ? 'Ordenar por data mais antiga' : 'Ordenar por data mais recente'}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Data</span>
+                      <ArrowUpDown 
+                        size={12} 
+                        className={`transition-all duration-300 ${
+                          dateSortOrder === 'asc' 
+                            ? 'rotate-180 text-emerald-500 dark:text-emerald-400' 
+                            : 'text-indigo-600 dark:text-indigo-400'
+                        } group-hover/date-header:scale-110`} 
+                      />
+                    </div>
+                  </th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-36 min-w-[144px] max-w-[144px]">Categoria</th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-28 min-w-[112px] max-w-[112px]">Banco</th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-28 min-w-[112px] max-w-[112px]">Status</th>
-                  <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-20 min-w-[80px] max-w-[80px]">Duplicar</th>
+                  <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-24 min-w-[96px] max-w-[96px]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -677,16 +713,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
                     {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : t.status === 'futuro' ? 'Futuro' : 'Pendente'}
                   </span>
                 </td>
-                <td className="p-4 pr-6 text-center w-20 min-w-[80px] max-w-[80px]">
+                <td className="p-4 pr-6 text-center w-24 min-w-[96px] max-w-[96px]">
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDuplicateTransaction(t);
+                      setActionsMenuTx(t);
+                      setActionsMenuAnchor({ x: e.clientX, y: e.clientY });
                     }}
                     className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-emerald-500 transition-all cursor-pointer inline-flex items-center justify-center border border-slate-100 dark:border-slate-800"
-                    title="Duplicar Transação"
+                    title="Opções"
                   >
-                    <Copy size={13} />
+                    <MoreHorizontal size={14} />
                   </button>
                 </td>
                   </tr>
@@ -696,6 +734,63 @@ const Transacoes: React.FC<TransacoesProps> = ({
           </div>
         )}
       </div>
+
+      {/* QUICK ACTIONS POPUP MENU */}
+      <AnimatePresence>
+        {actionsMenuTx && actionsMenuAnchor && (
+          <>
+            <div 
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => {
+                setActionsMenuTx(null);
+                setActionsMenuAnchor(null);
+              }}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: -5 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -5 }}
+              transition={{ duration: 0.12 }}
+              style={{ 
+                position: 'fixed',
+                top: Math.min(actionsMenuAnchor.y + 12, window.innerHeight - 150),
+                left: Math.min(actionsMenuAnchor.x - 120, window.innerWidth - 180),
+              }}
+              className="z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-2xl py-1.5 w-40 overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-300"
+            >
+              <div className="px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/80 mb-1">
+                Opções
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onDuplicateTransaction(actionsMenuTx);
+                  setActionsMenuTx(null);
+                  setActionsMenuAnchor(null);
+                }}
+                className="w-full px-3.5 py-2 text-xs font-black text-left flex items-center gap-2 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
+              >
+                <Copy size={13} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
+                Duplicar
+              </button>
+              {onDeleteTransaction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDeleteTransaction(actionsMenuTx.id);
+                    setActionsMenuTx(null);
+                    setActionsMenuAnchor(null);
+                  }}
+                  className="w-full px-3.5 py-2 text-xs font-bold text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors cursor-pointer text-rose-600 dark:text-rose-400"
+                >
+                  <Trash2 size={13} className="text-rose-500" />
+                  Apagar
+                </button>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

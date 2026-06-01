@@ -2185,6 +2185,7 @@ export default function App() {
               inlineValue={inlineValue}
               setInlineValue={setInlineValue}
               onDuplicateTransaction={handleDuplicateTransaction}
+              onDeleteTransaction={handleDeleteTransaction}
             />
           )}
 
@@ -2618,7 +2619,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => handleDuplicateTransaction(selectedTransaction)}
-                    className="p-3.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl transition-all active:scale-[0.98] cursor-pointer"
+                    className="p-3.5 bg-indigo-150 hover:bg-indigo-200 dark:bg-indigo-900/80 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-2xl transition-all active:scale-[0.98] cursor-pointer shadow-xs"
                     title="Duplicar Lançamento"
                   >
                     <Copy size={16} />
