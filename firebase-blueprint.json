@@ -251,6 +251,61 @@
       },
       "required": ["id", "name", "value", "dueDate", "category", "status", "userId"]
     },
+    "conta": {
+      "title": "Conta",
+      "description": "Contas a pagar / Boletos",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the bill"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name or description of the bill to pay"
+        },
+        "value": {
+          "type": "number",
+          "description": "Value of the bill in BRL"
+        },
+        "dueDate": {
+          "type": "string",
+          "format": "date",
+          "description": "Due date in YYYY-MM-DD"
+        },
+        "category": {
+          "type": "string",
+          "description": "Expense category ID"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pendente", "pago", "atrasado"],
+          "description": "Status of the bill"
+        },
+        "bank": {
+          "type": "string",
+          "description": "Target bank for source of funds"
+        },
+        "barcode": {
+          "type": "string",
+          "description": "Optional barcode line or Pix CopyPaste key"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional additional notes"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Associated owner user UID"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["id", "name", "value", "dueDate", "category", "status", "bank", "userId"]
+    },
     "vaultLog": {
       "title": "Vault Log",
       "description": "Transaction log for a vault",
@@ -314,6 +369,10 @@
     "/users/{userId}/recurrentes/{recorrenteId}": {
       "schema": "recorrente",
       "description": "Per-user list of monthly recurring expenses"
+    },
+    "/users/{userId}/contas/{contaId}": {
+      "schema": "conta",
+      "description": "Per-user list of bills to pay and boletos"
     }
   }
 }

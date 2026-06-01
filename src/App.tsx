@@ -32,6 +32,7 @@ import {
   Info,
   Tag,
   Pencil,
+  Copy,
   Utensils,
   Car,
   Sparkles,
@@ -49,7 +50,8 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  Receipt
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -73,13 +75,34 @@ import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firesto
 import Metas from './components/Metas';
 import Cofre, { Vault } from './components/Cofre';
 import Recorrentes, { Recorrente } from './components/Recorrentes';
+import Contas, { Conta } from './components/Contas';
 import Orcamentos from './components/Orcamentos';
 import Investimentos from './components/Investimentos';
 import Transacoes from './components/Transacoes';
 import Calendario from './components/Calendario';
 import { CATEGORIES, getCategoryIconAndStyle, BANKS, formatDateDisplay, getStatusColorClasses } from './constants';
 
-// Remove these as they are now in constants.ts
+const renderPieLabel = (props: any) => {
+  const { cx, cy, midAngle, innerRadius, outerRadius, icon, percent } = props;
+  if (!icon || percent < 0.05) return null; // Avoid overlapping small slices
+  const RADIAN = Math.PI / 180;
+  // Position closer to the middle of the donut slice
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+  return (
+    <text 
+      x={x} 
+      y={y} 
+      textAnchor="middle" 
+      dominantBaseline="central" 
+      className="text-xs select-none pointer-events-none"
+    >
+      {icon}
+    </text>
+  );
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -132,6 +155,12 @@ export default function App() {
     { id: '3', name: 'Aluguel', value: 1200.00, dueDate: 1, category: 'moradia', status: 'ativo', bank: 'Inter' }
   ]);
 
+  const [contas, setContas] = useState<Conta[]>([
+    { id: '1', name: 'Aluguel do mês', value: 1200.00, dueDate: '2026-06-10', category: 'moradia', status: 'pendente', bank: 'Nubank', notes: 'Pagar via boleto no DDA' },
+    { id: '2', name: 'Conta de Energia (CPFL)', value: 185.40, dueDate: '2026-06-12', category: 'servicos', status: 'pendente', bank: 'Itaú', notes: 'Débito automático' },
+    { id: '3', name: 'Conta de Água', value: 85.20, dueDate: '2026-06-05', category: 'servicos', status: 'pendente', bank: 'Inter' }
+  ]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newEntry, setNewEntry] = useState({
     type: 'saida',
@@ -166,6 +195,7 @@ export default function App() {
   const [inlineValue, setInlineValue] = useState<string>('');
 
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState<string | null>(null);
+  const [dashboardPopupType, setDashboardPopupType] = useState<'entradas' | 'saidas' | 'atrasadas' | 'receber' | null>(null);
   const [customCategories, setCustomCategories] = useState<any[]>([]);
 
   // States, useMemo filters, and clearAllFilters moved to Transacoes.tsx
@@ -321,6 +351,19 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, recurrentesPath);
     });
 
+    // I. Live sync contas
+    const contasPath = `users/${user.uid}/contas`;
+    const unsubContas = onSnapshot(collection(db, contasPath), (snapshot) => {
+      const cts: Conta[] = [];
+      snapshot.forEach((d) => {
+        cts.push(d.data() as Conta);
+      });
+      cts.sort((a, b) => b.id.localeCompare(a.id));
+      setContas(cts);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, contasPath);
+    });
+
     // H. Live sync custom categories
     const categoriesPath = `users/${user.uid}/categories`;
     const unsubCategories = onSnapshot(collection(db, categoriesPath), (snapshot) => {
@@ -340,6 +383,7 @@ export default function App() {
       unsubGoals();
       unsubVaults();
       unsubRecurrentes();
+      unsubContas();
       unsubCategories();
     };
   }, [user]);
@@ -426,6 +470,11 @@ export default function App() {
         { id: '2', name: 'Academia', value: 110.00, dueDate: 5, category: 'lazer', status: 'ativo', bank: 'Itaú' },
         { id: '3', name: 'Aluguel', value: 1200.00, dueDate: 1, category: 'moradia', status: 'ativo', bank: 'Inter' }
       ]);
+      setContas([
+        { id: '1', name: 'Aluguel do mês', value: 1200.00, dueDate: '2026-06-10', category: 'moradia', status: 'pendente', bank: 'Nubank', notes: 'Pagar via boleto no DDA' },
+        { id: '2', name: 'Conta de Energia (CPFL)', value: 185.40, dueDate: '2026-06-12', category: 'servicos', status: 'pendente', bank: 'Itaú', notes: 'Débito automático' },
+        { id: '3', name: 'Conta de Água', value: 85.20, dueDate: '2026-06-05', category: 'servicos', status: 'pendente', bank: 'Inter' }
+      ]);
     } catch (error) {
       console.error("Logout failed: ", error);
     }
@@ -487,15 +536,31 @@ export default function App() {
     };
   }, [transactions]);
 
+  const dashboardPopupTransactions = useMemo(() => {
+    if (!dashboardPopupType) return [];
+    let list = [];
+    if (dashboardPopupType === 'entradas') {
+      list = transactions.filter(t => t.type === 'entrada');
+    } else if (dashboardPopupType === 'saidas') {
+      list = transactions.filter(t => t.type === 'saida');
+    } else if (dashboardPopupType === 'atrasadas') {
+      list = transactions.filter(t => t.type === 'saida' && t.status === 'atrasado');
+    } else if (dashboardPopupType === 'receber') {
+      list = transactions.filter(t => t.type === 'entrada' && t.status === 'pendente');
+    }
+    return [...list].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, dashboardPopupType]);
+
   const allCategoriesData = useMemo(() => {
-    const dataMap: Record<string, { name: string; value: number; color: string }> = {};
+    const dataMap: Record<string, { name: string; value: number; color: string; icon: string }> = {};
     
     // Initialize standard/custom categories
     mergedCategories.forEach(cat => {
       dataMap[cat.id] = {
         name: cat.name,
         value: 0,
-        color: cat.color
+        color: cat.color,
+        icon: (cat as any).icon || getCategoryIconAndStyle(cat.id).icon
       };
     });
     
@@ -516,7 +581,8 @@ export default function App() {
           dataMap[catId] = {
             name: displayLabel,
             value: val,
-            color: color
+            color: color,
+            icon: getCategoryIconAndStyle(catId).icon
           };
         }
       }
@@ -526,17 +592,18 @@ export default function App() {
       id,
       ...item
     })).sort((a, b) => b.value - a.value);
-  }, [transactions]);
+  }, [transactions, mergedCategories]);
 
   const allCategoriesIncomesData = useMemo(() => {
-    const dataMap: Record<string, { name: string; value: number; color: string }> = {};
+    const dataMap: Record<string, { name: string; value: number; color: string; icon: string }> = {};
     
     // Initialize standard/custom categories
     mergedCategories.forEach(cat => {
       dataMap[cat.id] = {
         name: cat.name,
         value: 0,
-        color: cat.color
+        color: cat.color,
+        icon: (cat as any).icon || getCategoryIconAndStyle(cat.id).icon
       };
     });
     
@@ -557,7 +624,8 @@ export default function App() {
           dataMap[catId] = {
             name: displayLabel,
             value: val,
-            color: color
+            color: color,
+            icon: getCategoryIconAndStyle(catId).icon
           };
         }
       }
@@ -567,7 +635,7 @@ export default function App() {
       id,
       ...item
     })).sort((a, b) => b.value - a.value);
-  }, [transactions]);
+  }, [transactions, mergedCategories]);
 
   const categoryExpensesData = useMemo(() => {
     return allCategoriesData.filter(d => d.value > 0);
@@ -709,6 +777,37 @@ export default function App() {
     }
   };
 
+  const handleQuickPayConta = async (conta: Conta) => {
+    const transactionId = String(Date.now());
+    const currentDate = new Date().toISOString().split('T')[0];
+
+    const transaction = {
+      id: transactionId,
+      type: 'saida',
+      value: conta.value,
+      date: currentDate,
+      category: conta.category,
+      bank: conta.bank,
+      method: 'Boleto',
+      description: `Conta paga: ${conta.name}`,
+      essential: true,
+      status: 'pago',
+      recurring: false,
+      userId: user ? user.uid : 'demo'
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, transactionId), transaction);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
+      }
+    } else {
+      setTransactions(prev => [transaction, ...prev]);
+    }
+  };
+
   const handleDeleteTransaction = async (id: string) => {
     const transactionToDelete = transactions.find(t => t.id === id);
     if (!transactionToDelete) return;
@@ -746,6 +845,51 @@ export default function App() {
           const amount = Number(transactionToDelete.value) || 0;
           const logContrib = transactionToDelete.type === 'entrada' ? -amount : amount;
           setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue - logContrib) } : v));
+        }
+      }
+    }
+    setSelectedTransaction(null);
+  };
+
+  const handleDuplicateTransaction = async (originalTx: any) => {
+    if (!originalTx) return;
+    const transactionId = String(Date.now());
+    const duplicated = {
+      ...originalTx,
+      id: transactionId,
+    };
+
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await setDoc(doc(db, path, transactionId), duplicated);
+        
+        // Sync vault balance if linked to a vault
+        if (duplicated.vaultId) {
+          const vault = vaults.find(v => v.id === duplicated.vaultId);
+          if (vault) {
+            const amount = Number(duplicated.value) || 0;
+            const logContrib = duplicated.type === 'entrada' ? -amount : amount;
+            const updatedVault = { 
+              ...vault, 
+              currentValue: Math.max(0, vault.currentValue + logContrib) 
+            };
+            await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), updatedVault);
+          }
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
+      }
+    } else {
+      setTransactions([duplicated, ...transactions]);
+      
+      // Local mode sync for vaults
+      if (duplicated.vaultId) {
+        const vault = vaults.find(v => v.id === duplicated.vaultId);
+        if (vault) {
+          const amount = Number(duplicated.value) || 0;
+          const logContrib = duplicated.type === 'entrada' ? -amount : amount;
+          setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + logContrib) } : v));
         }
       }
     }
@@ -1335,8 +1479,9 @@ export default function App() {
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" id="dashboard" />
           <SidebarItem icon={List} label="Transações" id="transactions" />
           <SidebarItem icon={Target} label="Orçamentos" id="budgets" />
-          <SidebarItem icon={Lock} label="Cofre" id="cofre" />
+          <SidebarItem icon={Receipt} label="Contas a Pagar" id="contas" />
           <SidebarItem icon={Repeat} label="Recorrentes" id="recurrentes" />
+          <SidebarItem icon={Lock} label="Cofre" id="cofre" />
           <SidebarItem icon={Trophy} label="Metas" id="goals" />
           <SidebarItem icon={TrendingUp} label="Investimentos" id="investments" />
           <SidebarItem icon={Calendar} label="Calendário" id="calendar" />
@@ -1533,39 +1678,51 @@ export default function App() {
             >
               {/* Top Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div 
+                  onClick={() => setDashboardPopupType('entradas')}
+                  className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.99] select-none hover:bg-slate-50/50 dark:hover:bg-slate-800/30 group"
+                >
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg group-hover:scale-110 transition-transform">
                       <ArrowUpCircle size={20} />
                     </div>
-                    <span className="text-slate-500 dark:text-slate-400 font-medium">Entradas</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Entradas</span>
                   </div>
                   <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">R$ {stats.totalIn.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div 
+                  onClick={() => setDashboardPopupType('saidas')}
+                  className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.99] select-none hover:bg-slate-50/50 dark:hover:bg-slate-800/30 group"
+                >
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-lg">
+                    <div className="p-2 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-lg group-hover:scale-110 transition-transform">
                       <ArrowDownCircle size={20} />
                     </div>
-                    <span className="text-slate-500 dark:text-slate-400 font-medium">Saídas</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Saídas</span>
                   </div>
                   <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 text-right">R$ {stats.totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div 
+                  onClick={() => setDashboardPopupType('atrasadas')}
+                  className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.99] select-none hover:bg-slate-50/50 dark:hover:bg-slate-800/30 group"
+                >
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg">
+                    <div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg group-hover:scale-110 transition-transform">
                       <AlertCircle size={20} />
                     </div>
-                    <span className="text-slate-500 dark:text-slate-400 font-medium">Contas Atrasadas</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Contas Atrasadas</span>
                   </div>
                   <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">R$ {stats.overdue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                <div 
+                  onClick={() => setDashboardPopupType('receber')}
+                  className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm cursor-pointer hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.99] select-none hover:bg-slate-50/50 dark:hover:bg-slate-800/30 group"
+                >
                   <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg group-hover:scale-110 transition-transform">
                       <CheckCircle2 size={20} />
                     </div>
-                    <span className="text-slate-500 dark:text-slate-400 font-medium">Pra Receber</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">Pra Receber</span>
                   </div>
                   <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">R$ {stats.toReceive.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
@@ -1598,13 +1755,19 @@ export default function App() {
                               paddingAngle={4}
                               dataKey="value"
                               stroke="none"
+                              labelLine={false}
+                              label={renderPieLabel}
                             >
                               {categoryIncomesData.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
                             </Pie>
                             <Tooltip 
-                              formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              formatter={(value: number, name: any, props: any) => {
+                                const entry = props?.payload;
+                                const emoji = entry?.icon ? `${entry.icon} ` : '';
+                                return [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, `${emoji}${name}`];
+                              }}
                               contentStyle={{ 
                                 backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
                                 borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
@@ -1625,7 +1788,9 @@ export default function App() {
                               <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                 <div className="flex items-center gap-2">
                                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{item.name}</span>
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">
+                                    <span className="mr-1">{item.icon}</span>{item.name}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-3 text-right">
                                   <span className="font-extrabold text-slate-900 dark:text-slate-100">
@@ -1669,13 +1834,19 @@ export default function App() {
                               paddingAngle={4}
                               dataKey="value"
                               stroke="none"
+                              labelLine={false}
+                              label={renderPieLabel}
                             >
                               {categoryExpensesData.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                               ))}
                             </Pie>
                             <Tooltip 
-                              formatter={(value: number) => `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                              formatter={(value: number, name: any, props: any) => {
+                                const entry = props?.payload;
+                                const emoji = entry?.icon ? `${entry.icon} ` : '';
+                                return [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, `${emoji}${name}`];
+                              }}
                               contentStyle={{ 
                                 backgroundColor: theme === 'dark' ? '#0f172a' : '#fff', 
                                 borderColor: theme === 'dark' ? '#1e293b' : '#e2e8f0', 
@@ -1696,7 +1867,9 @@ export default function App() {
                               <div key={item.id} className="flex items-center justify-between text-xs py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                                 <div className="flex items-center gap-2">
                                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{item.name}</span>
+                                  <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">
+                                    <span className="mr-1">{item.icon}</span>{item.name}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-3 text-right">
                                   <span className="font-extrabold text-slate-900 dark:text-slate-100">
@@ -1896,6 +2069,7 @@ export default function App() {
               setInlineEdit={setInlineEdit}
               inlineValue={inlineValue}
               setInlineValue={setInlineValue}
+              onDuplicateTransaction={handleDuplicateTransaction}
             />
           )}
 
@@ -1953,6 +2127,16 @@ export default function App() {
               user={user} 
               theme={theme}
               onQuickPay={handleQuickPayRecurring}
+            />
+          )}
+
+          {activeTab === 'contas' && (
+            <Contas 
+              contas={contas} 
+              setContas={setContas} 
+              user={user} 
+              theme={theme}
+              onQuickPay={handleQuickPayConta}
             />
           )}
 
@@ -2312,6 +2496,15 @@ export default function App() {
                   >
                     <Pencil size={15} />
                     <span>Editar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDuplicateTransaction(selectedTransaction)}
+                    className="p-3.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl transition-all active:scale-[0.98] cursor-pointer"
+                    title="Duplicar Lançamento"
+                  >
+                    <Copy size={16} />
                   </button>
                   
                   <button
@@ -3123,18 +3316,18 @@ export default function App() {
               <div className="space-y-2">
                 <button
                   onClick={() => {
-                    setActiveTab('cofre');
+                    setActiveTab('contas');
                     setIsMobileMenuOpen(false);
                   }}
                   className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
-                    activeTab === 'cofre' 
+                    activeTab === 'contas' 
                       ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
                       : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Lock size={18} className="text-amber-500" />
-                    <span className="text-sm">Cofre Virtual</span>
+                    <Receipt size={18} className="text-indigo-500" />
+                    <span className="text-sm">Contas a Pagar</span>
                   </div>
                   <ChevronRight size={16} className="text-slate-400" />
                 </button>
@@ -3151,8 +3344,26 @@ export default function App() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Repeat size={18} className="text-indigo-505 text-indigo-500" />
+                    <Repeat size={18} className="text-indigo-500" />
                     <span className="text-sm">Gastos Recorrentes</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('cofre');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'cofre' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Lock size={18} className="text-amber-500" />
+                    <span className="text-sm">Cofre Virtual</span>
                   </div>
                   <ChevronRight size={16} className="text-slate-400" />
                 </button>
@@ -3636,6 +3847,169 @@ export default function App() {
                     </button>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Dashboard Summary Box Popup Modal */}
+      <AnimatePresence>
+        {dashboardPopupType && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDashboardPopupType(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.93, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.93, opacity: 0, y: 15 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[2.2rem] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 dark:border-slate-800/80 overflow-hidden relative z-10 transition-colors duration-300 flex flex-col max-h-[85vh]"
+            >
+              {/* Header section with dynamic colors */}
+              <div className={`p-6 text-center relative overflow-hidden shrink-0 border-b ${
+                dashboardPopupType === 'entradas'
+                  ? 'bg-gradient-to-br from-emerald-500/10 via-emerald-50/20 to-white dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900 border-emerald-100/30 dark:border-emerald-950/20'
+                  : dashboardPopupType === 'saidas'
+                  ? 'bg-gradient-to-br from-rose-500/10 via-rose-50/20 to-white dark:from-rose-950/20 dark:via-slate-900 dark:to-slate-900 border-rose-100/30 dark:border-rose-950/20'
+                  : dashboardPopupType === 'atrasadas'
+                  ? 'bg-gradient-to-br from-amber-500/10 via-amber-50/20 to-white dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900 border-amber-100/30 dark:border-amber-950/20'
+                  : 'bg-gradient-to-br from-blue-500/10 via-blue-50/20 to-white dark:from-blue-950/20 dark:via-slate-900 dark:to-slate-900 border-blue-100/30 dark:border-blue-950/20'
+              }`}>
+                {/* Decorative glowing gradient aura */}
+                <div className={`absolute -top-12 -left-12 w-32 h-32 rounded-full blur-2xl opacity-40 ${
+                  dashboardPopupType === 'entradas' ? 'bg-emerald-400' :
+                  dashboardPopupType === 'saidas' ? 'bg-rose-400' :
+                  dashboardPopupType === 'atrasadas' ? 'bg-amber-400' : 'bg-blue-400'
+                }`} />
+                <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full blur-2xl opacity-40 ${
+                  dashboardPopupType === 'entradas' ? 'bg-teal-400' :
+                  dashboardPopupType === 'saidas' ? 'bg-pink-400' :
+                  dashboardPopupType === 'atrasadas' ? 'bg-orange-400' : 'bg-cyan-400'
+                }`} />
+
+                <div className="absolute top-4 right-4 flex items-center">
+                  <button 
+                    onClick={() => setDashboardPopupType(null)} 
+                    className="p-1.5 bg-slate-200/40 hover:bg-slate-200/80 dark:bg-slate-800/40 dark:hover:bg-slate-800/80 rounded-full transition-all text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                
+                {/* Badge Icon */}
+                <div className={`mx-auto w-14 h-14 rounded-2xl flex items-center justify-center mb-3 shadow-xs border backdrop-blur-md transition-transform duration-300 hover:scale-105 ${
+                  dashboardPopupType === 'entradas'
+                    ? 'bg-emerald-100 border-emerald-200/50 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-800/40 dark:text-emerald-400'
+                    : dashboardPopupType === 'saidas'
+                    ? 'bg-rose-100 border-rose-200/50 text-rose-600 dark:bg-rose-900/30 dark:border-rose-800/40 dark:text-rose-400'
+                    : dashboardPopupType === 'atrasadas'
+                    ? 'bg-amber-100 border-amber-200/50 text-amber-600 dark:bg-amber-900/30 dark:border-amber-800/40 dark:text-amber-400'
+                    : 'bg-blue-100 border-blue-200/50 text-blue-600 dark:bg-blue-900/30 dark:border-blue-800/40 dark:text-blue-400'
+                }`}>
+                  {dashboardPopupType === 'entradas' && <ArrowUpCircle size={26} />}
+                  {dashboardPopupType === 'saidas' && <ArrowDownCircle size={26} />}
+                  {dashboardPopupType === 'atrasadas' && <AlertCircle size={26} />}
+                  {dashboardPopupType === 'receber' && <CheckCircle2 size={26} />}
+                </div>
+
+                <h3 className="text-xl font-black dark:text-white capitalize">
+                  {dashboardPopupType === 'entradas' && 'Entradas'}
+                  {dashboardPopupType === 'saidas' && 'Saídas'}
+                  {dashboardPopupType === 'atrasadas' && 'Contas Atrasadas'}
+                  {dashboardPopupType === 'receber' && 'Pra Receber'}
+                </h3>
+                
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
+                  {dashboardPopupType === 'entradas' && 'Total de receitas registradas'}
+                  {dashboardPopupType === 'saidas' && 'Total de despesas registradas'}
+                  {dashboardPopupType === 'atrasadas' && 'Despesas com pagamento atrasado'}
+                  {dashboardPopupType === 'receber' && 'Receitas pendentes de recebimento'}
+                </p>
+
+                {/* Big aggregated value */}
+                <p className={`text-2xl font-black ${
+                  dashboardPopupType === 'entradas' ? 'text-emerald-600 dark:text-emerald-400' :
+                  dashboardPopupType === 'saidas' ? 'text-rose-600 dark:text-rose-400' :
+                  dashboardPopupType === 'atrasadas' ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'
+                } mt-2`}>
+                  R$ {(dashboardPopupType === 'entradas' ? stats.totalIn :
+                       dashboardPopupType === 'saidas' ? stats.totalOut :
+                       dashboardPopupType === 'atrasadas' ? stats.overdue : stats.toReceive).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+
+              {/* Transactions List Container */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-3 min-h-[300px]">
+                {dashboardPopupTransactions.length === 0 ? (
+                  <div className="text-center py-16 flex flex-col items-center justify-center h-full">
+                    <p className="text-4xl mb-3">🍃</p>
+                    <p className="text-sm font-bold text-slate-400 dark:text-slate-500">Nenhum lançamento encontrado nesta categoria</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 max-w-xs mt-1">Tudo limpo por aqui! Quando novos lançamentos forem criados, eles aparecerão nesta lista.</p>
+                  </div>
+                ) : (
+                  dashboardPopupTransactions.map((t) => (
+                    <div 
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedTransaction(t);
+                        setDashboardPopupType(null); // Switch directly to details
+                      }}
+                      className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100 dark:hover:bg-slate-800/60 border border-slate-100 dark:border-slate-800/50 transition-all duration-200 cursor-pointer group active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="text-xl shrink-0 w-11 h-11 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center border border-slate-100 dark:border-slate-800 shadow-3xs">
+                          {getCategoryIconAndStyle(t.category).icon}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                            {t.description}
+                          </p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
+                            {formatDateDisplay(t.date)} • {t.bank}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-black ${
+                          t.type === 'entrada' 
+                            ? 'text-emerald-600 dark:text-emerald-400' 
+                            : 'text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {t.type === 'entrada' ? '+' : '-'} R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <span className="text-[9px] dark:text-slate-500 text-slate-400 font-bold uppercase mt-0.5 block">
+                          {t.method}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between shrink-0 text-xs text-slate-400 dark:text-slate-500 font-bold">
+                <span>Registros: {dashboardPopupTransactions.length}</span>
+                <button
+                  onClick={() => {
+                    const defaultType = (dashboardPopupType === 'entradas' || dashboardPopupType === 'receber') ? 'entrada' : 'saida';
+                    const defaultStatus = dashboardPopupType === 'atrasadas' ? 'atrasado' : dashboardPopupType === 'receber' ? 'pendente' : 'pago';
+                    setNewEntry(prev => ({ 
+                      ...prev, 
+                      type: defaultType,
+                      status: defaultStatus
+                    }));
+                    setDashboardPopupType(null);
+                    setIsModalOpen(true);
+                  }}
+                  className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  + Novo Lançamento
+                </button>
               </div>
             </motion.div>
           </div>

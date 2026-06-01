@@ -112,6 +112,21 @@ service cloud.firestore {
         && data.userId == userId;
     }
 
+    function isValidConta(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.value is number
+        && data.dueDate is string
+        && data.dueDate.size() == 10
+        && data.category is string
+        && data.status is string
+        && (data.status == 'pago' || data.status == 'pendente' || data.status == 'atrasado')
+        && data.bank is string
+        && data.userId == userId;
+    }
+
     function isValidCategory(data, userId) {
       return data.id is string
         && data.id.size() <= 128
@@ -191,6 +206,14 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(recorrenteId) && isValidRecorrente(incoming(), userId);
         allow update: if isOwner(userId) && isValidId(recorrenteId) && isValidRecorrente(incoming(), userId);
         allow delete: if isOwner(userId) && isValidId(recorrenteId);
+      }
+      
+      // Subcollection for Contas
+      match /contas/{contaId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(contaId) && isValidConta(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(contaId) && isValidConta(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(contaId);
       }
     }
   }

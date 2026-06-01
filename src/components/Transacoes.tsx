@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Minus, Search, X, Filter, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Minus, Search, X, Filter, ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import { CATEGORIES, BANKS, getCategoryIconAndStyle, formatDateDisplay, getStatusColorClasses } from '../constants';
 
 interface Transaction {
@@ -35,6 +35,7 @@ interface TransacoesProps {
   setInlineEdit: (edit: { id: string; field: string } | null) => void;
   inlineValue: string;
   setInlineValue: (value: string) => void;
+  onDuplicateTransaction: (tx: Transaction) => void;
 }
 
 const Transacoes: React.FC<TransacoesProps> = ({
@@ -54,8 +55,10 @@ const Transacoes: React.FC<TransacoesProps> = ({
   setInlineEdit,
   inlineValue,
   setInlineValue,
+  onDuplicateTransaction,
 }) => {
   // Filter states moved from App.tsx
+  const [boxFilter, setBoxFilter] = useState<'todos' | 'em_conta' | 'futuro' | 'pendente' | 'total_gasto' | 'saldo_total'>('todos');
   const [typeFilter, setTypeFilter] = useState<'todos' | 'entrada' | 'saida'>('todos');
   const [txSearchQuery, setTxSearchQuery] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
@@ -96,6 +99,17 @@ const Transacoes: React.FC<TransacoesProps> = ({
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      // 0. Box Filter
+      if (boxFilter === 'em_conta') {
+        if (t.status !== 'pago') return false;
+      } else if (boxFilter === 'futuro') {
+        if (t.status !== 'futuro') return false;
+      } else if (boxFilter === 'pendente') {
+        if (t.status !== 'pendente' && t.status !== 'atrasado') return false;
+      } else if (boxFilter === 'total_gasto') {
+        if (t.type !== 'saida') return false;
+      }
+
       // 1. Type
       if (typeFilter !== 'todos' && t.type !== typeFilter) return false;
       // 2. Status
@@ -125,18 +139,20 @@ const Transacoes: React.FC<TransacoesProps> = ({
       }
       return true;
     });
-  }, [transactions, typeFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter, txSearchQuery]);
+  }, [transactions, boxFilter, typeFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter, txSearchQuery]);
 
   const activeFiltersCount = useMemo(() => {
-    return (statusFilter !== 'todos' ? 1 : 0) +
+    return (boxFilter !== 'todos' ? 1 : 0) +
+           (statusFilter !== 'todos' ? 1 : 0) +
            (paymentMethodFilter !== 'todos' ? 1 : 0) +
            (bankFilter !== 'todos' ? 1 : 0) +
            (categoryFilter !== 'todos' ? 1 : 0) +
            (startDateFilter ? 1 : 0) +
            (endDateFilter ? 1 : 0);
-  }, [statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter]);
+  }, [boxFilter, statusFilter, paymentMethodFilter, bankFilter, categoryFilter, startDateFilter, endDateFilter]);
 
   const clearAllFilters = () => {
+    setBoxFilter('todos');
     setTypeFilter('todos');
     setStatusFilter('todos');
     setCategoryFilter('todos');
@@ -158,9 +174,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
       {/* Resumo de Saldos */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Card Em Conta */}
-        <div className="bg-teal-50/40 dark:bg-teal-950/10 border border-teal-100/50 dark:border-teal-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-teal-50/60 dark:hover:bg-teal-950/15">
+        <div 
+          onClick={() => setBoxFilter(prev => prev === 'em_conta' ? 'todos' : 'em_conta')}
+          className={`p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 cursor-pointer select-none active:scale-[0.98] ${
+            boxFilter === 'em_conta'
+              ? 'bg-teal-100/70 dark:bg-teal-950/40 border-teal-400 dark:border-teal-500 ring-2 ring-teal-500/30 shadow-md scale-[1.02]'
+              : boxFilter !== 'todos'
+              ? 'opacity-45 saturate-[45%] scale-[0.96] border-transparent bg-teal-50/40 dark:bg-teal-950/10'
+              : 'bg-teal-50/40 dark:bg-teal-950/10 border border-teal-100/50 dark:border-teal-900/30 hover:shadow-xs hover:bg-teal-50/60 dark:hover:bg-teal-950/15'
+          }`}
+        >
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-teal-700 dark:text-teal-400 mb-1 block">
-            ✅ Em Conta
+            ✅ Em Conta {boxFilter === 'em_conta' && '• Ativo'}
           </span>
           <p className="text-base font-black tracking-tight text-teal-900 dark:text-teal-100">
             R$ {statsLocal.balanceRecebido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -168,9 +193,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
         </div>
 
         {/* Card Futuro */}
-        <div className="bg-sky-50/40 dark:bg-sky-950/10 border border-sky-100/50 dark:border-sky-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-sky-50/60 dark:hover:bg-sky-950/15">
+        <div 
+          onClick={() => setBoxFilter(prev => prev === 'futuro' ? 'todos' : 'futuro')}
+          className={`p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 cursor-pointer select-none active:scale-[0.98] ${
+            boxFilter === 'futuro'
+              ? 'bg-sky-100/70 dark:bg-sky-950/40 border-sky-400 dark:border-sky-500 ring-2 ring-sky-500/30 shadow-md scale-[1.02]'
+              : boxFilter !== 'todos'
+              ? 'opacity-45 saturate-[45%] scale-[0.96] border-transparent bg-sky-50/40 dark:bg-sky-950/10'
+              : 'bg-sky-50/40 dark:bg-sky-950/10 border border-sky-100/50 dark:border-sky-900/30 hover:shadow-xs hover:bg-sky-50/60 dark:hover:bg-sky-950/15'
+          }`}
+        >
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-sky-700 dark:text-sky-400 mb-1 block">
-            🔮 Futuro
+            🔮 Futuro {boxFilter === 'futuro' && '• Ativo'}
           </span>
           <p className="text-base font-black tracking-tight text-sky-900 dark:text-sky-100">
             R$ {statsLocal.balanceFuturo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -178,9 +212,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
         </div>
 
         {/* Card Pendente */}
-        <div className="bg-amber-50/40 dark:bg-amber-950/10 border border-amber-100/50 dark:border-amber-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-amber-50/60 dark:hover:bg-amber-950/15">
+        <div 
+          onClick={() => setBoxFilter(prev => prev === 'pendente' ? 'todos' : 'pendente')}
+          className={`p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 cursor-pointer select-none active:scale-[0.98] ${
+            boxFilter === 'pendente'
+              ? 'bg-amber-100/70 dark:bg-amber-950/40 border-amber-400 dark:border-amber-500 ring-2 ring-amber-500/30 shadow-md scale-[1.02]'
+              : boxFilter !== 'todos'
+              ? 'opacity-45 saturate-[45%] scale-[0.96] border-transparent bg-amber-50/40 dark:bg-amber-950/10'
+              : 'bg-amber-50/40 dark:bg-amber-950/10 border border-amber-100/50 dark:border-amber-900/30 hover:shadow-xs hover:bg-amber-50/60 dark:hover:bg-amber-950/15'
+          }`}
+        >
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-1 block">
-            ⏳ Pendente
+            ⏳ Pendente {boxFilter === 'pendente' && '• Ativo'}
           </span>
           <p className="text-base font-black tracking-tight text-amber-900 dark:text-amber-100">
             R$ {statsLocal.balancePendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -188,9 +231,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
         </div>
 
         {/* Card Total Gasto */}
-        <div className="bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100/50 dark:border-rose-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-rose-50/60 dark:hover:bg-rose-950/15">
+        <div 
+          onClick={() => setBoxFilter(prev => prev === 'total_gasto' ? 'todos' : 'total_gasto')}
+          className={`p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 cursor-pointer select-none active:scale-[0.98] ${
+            boxFilter === 'total_gasto'
+              ? 'bg-rose-100/70 dark:bg-rose-950/40 border-rose-400 dark:border-rose-500 ring-2 ring-rose-500/30 shadow-md scale-[1.02]'
+              : boxFilter !== 'todos'
+              ? 'opacity-45 saturate-[45%] scale-[0.96] border-transparent bg-rose-50/40 dark:bg-rose-950/10'
+              : 'bg-rose-50/40 dark:bg-rose-950/10 border border-rose-100/50 dark:border-rose-900/30 hover:shadow-xs hover:bg-rose-50/60 dark:hover:bg-rose-950/15'
+          }`}
+        >
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-rose-700 dark:text-rose-455 mb-1 block">
-            💸 Total Gasto
+            💸 Total Gasto {boxFilter === 'total_gasto' && '• Ativo'}
           </span>
           <p className="text-base font-black tracking-tight text-rose-900 dark:text-rose-100">
             R$ {statsLocal.totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -198,9 +250,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
         </div>
 
         {/* Card Saldo Total */}
-        <div className="col-span-2 sm:col-span-1 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100/50 dark:border-emerald-900/30 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 hover:shadow-xs hover:bg-emerald-50/70 dark:hover:bg-emerald-950/15">
+        <div 
+          onClick={() => setBoxFilter(prev => prev === 'saldo_total' ? 'todos' : 'saldo_total')}
+          className={`col-span-2 sm:col-span-1 p-4 rounded-3xl flex flex-col justify-between transition-all duration-300 cursor-pointer select-none active:scale-[0.98] ${
+            boxFilter === 'saldo_total'
+              ? 'bg-emerald-100/70 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-500 ring-2 ring-emerald-500/30 shadow-md scale-[1.02]'
+              : boxFilter !== 'todos'
+              ? 'opacity-45 saturate-[45%] scale-[0.96] border-transparent bg-emerald-50/50 dark:bg-emerald-950/10'
+              : 'bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100/50 dark:border-emerald-900/30 hover:shadow-xs hover:bg-emerald-50/70 dark:hover:bg-emerald-950/15'
+          }`}
+        >
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1 block">
-            💵 Saldo Total
+            💵 Saldo Total {boxFilter === 'saldo_total' && '• Ativo'}
           </span>
           <p className="text-base font-black tracking-tight text-emerald-900 dark:text-emerald-100">
             R$ {statsLocal.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -423,7 +484,8 @@ const Transacoes: React.FC<TransacoesProps> = ({
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-32 min-w-[128px] max-w-[128px]">Data</th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-36 min-w-[144px] max-w-[144px]">Categoria</th>
                   <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider w-28 min-w-[112px] max-w-[112px]">Banco</th>
-                  <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-28 min-w-[112px] max-w-[112px]">Status</th>
+                  <th className="p-4 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-28 min-w-[112px] max-w-[112px]">Status</th>
+                  <th className="p-4 pr-6 font-bold text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-wider text-center w-20 min-w-[80px] max-w-[80px]">Duplicar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -598,7 +660,7 @@ const Transacoes: React.FC<TransacoesProps> = ({
                     {t.bank}
                   </span>
                 </td>
-                <td className={`p-4 text-center pr-6 transition-colors duration-300 w-28 min-w-[112px] max-w-[112px] ${getStatusColorClasses(t.status, true)}`}>
+                <td className={`p-4 text-center transition-colors duration-300 w-28 min-w-[112px] max-w-[112px] ${getStatusColorClasses(t.status, true)}`}>
                   <span 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -614,6 +676,18 @@ const Transacoes: React.FC<TransacoesProps> = ({
                   >
                     {t.status === 'pago' ? 'Pago' : t.status === 'atrasado' ? 'Atrasado' : t.status === 'futuro' ? 'Futuro' : 'Pendente'}
                   </span>
+                </td>
+                <td className="p-4 pr-6 text-center w-20 min-w-[80px] max-w-[80px]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDuplicateTransaction(t);
+                    }}
+                    className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-emerald-500 transition-all cursor-pointer inline-flex items-center justify-center border border-slate-100 dark:border-slate-800"
+                    title="Duplicar Transação"
+                  >
+                    <Copy size={13} />
+                  </button>
                 </td>
                   </tr>
                 ))}
