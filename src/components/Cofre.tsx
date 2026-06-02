@@ -60,6 +60,7 @@ interface CofreProps {
   handleUpdateTransaction: (transaction: any) => Promise<void>;
   user: any;
   theme: 'light' | 'dark';
+  triggerUndoToast?: (message: string, type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', item: any, extraData?: any) => void;
 }
 
 export default function Cofre({ 
@@ -70,7 +71,8 @@ export default function Cofre({
   handleDeleteTransaction,
   handleUpdateTransaction,
   user, 
-  theme 
+  theme,
+  triggerUndoToast
 }: CofreProps) {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [selectedVault, setSelectedVault] = useState<Vault | null>(null);
@@ -187,6 +189,7 @@ export default function Cofre({
   };
 
   const handleDeleteVault = async (id: string) => {
+    const vaultToDeleteDoc = vaults.find(v => v.id === id);
     // Also delete linked transactions as requested ("linkado", "apagou em um apaga no outro")
     const linkedTxs = transactions.filter(t => t.vaultId === id);
     
@@ -207,6 +210,16 @@ export default function Cofre({
         handleFirestoreError(err, OperationType.DELETE, `${path}/${id}`);
       }
     }
+
+    if (vaultToDeleteDoc && triggerUndoToast) {
+      triggerUndoToast(
+        `Cofre "${vaultToDeleteDoc.name}" excluído`,
+        'cofre',
+        vaultToDeleteDoc,
+        { linkedTxs }
+      );
+    }
+
     setVaultToDelete(null);
   };
 

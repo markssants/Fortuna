@@ -52,9 +52,10 @@ interface RecorrentesProps {
   user: any;
   theme: 'light' | 'dark';
   onQuickPay?: (recorrente: Recorrente) => void;
+  triggerUndoToast?: (message: string, type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', item: any, extraData?: any) => void;
 }
 
-export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, onQuickPay }: RecorrentesProps) {
+export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, onQuickPay, triggerUndoToast }: RecorrentesProps) {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [recorrenteToDelete, setRecorrenteToDelete] = useState<Recorrente | null>(null);
   const [filterStatus, setFilterStatus] = useState<'todos' | 'ativo' | 'pausado'>('todos');
@@ -181,6 +182,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
   };
 
   const handleDelete = async (id: string) => {
+    const recorrenteToDeleteDoc = recurrentes.find(r => r.id === id);
     // Optimistic State Update
     setRecurrentes(prev => prev.filter(r => r.id !== id));
 
@@ -192,6 +194,15 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
         handleFirestoreError(err, OperationType.DELETE, `${path}/${id}`);
       }
     }
+
+    if (recorrenteToDeleteDoc && triggerUndoToast) {
+      triggerUndoToast(
+        `Recorrência "${recorrenteToDeleteDoc.name}" excluída`,
+        'recorrente',
+        recorrenteToDeleteDoc
+      );
+    }
+
     setRecorrenteToDelete(null);
   };
 

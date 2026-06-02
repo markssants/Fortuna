@@ -51,7 +51,8 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
-  Receipt
+  Receipt,
+  RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -197,6 +198,189 @@ export default function App() {
   const [selectedBudgetCategory, setSelectedBudgetCategory] = useState<string | null>(null);
   const [dashboardPopupType, setDashboardPopupType] = useState<'entradas' | 'saidas' | 'atrasadas' | 'receber' | null>(null);
   const [customCategories, setCustomCategories] = useState<any[]>([]);
+
+  // 8 Seconds Undo Toast State
+  interface UndoToast {
+    id: string;
+    message: string;
+    type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category';
+    item: any;
+    extraData?: any;
+  }
+  const [activeUndoToast, setActiveUndoToast] = useState<UndoToast | null>(null);
+  const [toastProgress, setToastProgress] = useState(100);
+
+  const triggerUndoToast = (
+    message: string, 
+    type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', 
+    item: any, 
+    extraData?: any
+  ) => {
+    setActiveUndoToast({
+      id: String(Date.now()),
+      message,
+      type,
+      item,
+      extraData
+    });
+    setToastProgress(100);
+  };
+
+  useEffect(() => {
+    if (!activeUndoToast) return;
+
+    setToastProgress(100);
+    const totalDuration = 8000; // 8 seconds
+    const intervalTime = 50; // update scale / bar every 50ms
+    const decrement = (intervalTime / totalDuration) * 100;
+
+    const interval = setInterval(() => {
+      setToastProgress((prev) => {
+        if (prev <= decrement) {
+          clearInterval(interval);
+          setActiveUndoToast(null);
+          return 0;
+        }
+        return prev - decrement;
+      });
+    }, intervalTime);
+
+    return () => clearInterval(interval);
+  }, [activeUndoToast]);
+
+  const handleUndoDelete = async () => {
+    if (!activeUndoToast) return;
+    const { type, item, extraData } = activeUndoToast;
+
+    try {
+      if (type === 'transaction') {
+        if (user) {
+          const path = `users/${user.uid}/transactions`;
+          await setDoc(doc(db, path, item.id), item);
+          
+          // Restore vault balance
+          if (item.vaultId) {
+            const vault = vaults.find(v => v.id === item.vaultId);
+            if (vault) {
+              const amount = Number(item.value) || 0;
+              const logContrib = item.type === 'entrada' ? -amount : amount;
+              await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), {
+                ...vault,
+                currentValue: Math.max(0, vault.currentValue + logContrib)
+              });
+            }
+          }
+
+          // Restore linked bill (Conta) if any was deleted
+          if (extraData?.linkedConta) {
+            const contaPath = `users/${user.uid}/contas`;
+            await setDoc(doc(db, contaPath, extraData.linkedConta.id), extraData.linkedConta);
+          }
+        } else {
+          setTransactions(prev => [item, ...prev]);
+          
+          if (item.vaultId) {
+            const vault = vaults.find(v => v.id === item.vaultId);
+            if (vault) {
+              const amount = Number(item.value) || 0;
+              const logContrib = item.type === 'entrada' ? -amount : amount;
+              setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + logContrib) } : v));
+            }
+          }
+
+          if (extraData?.linkedConta) {
+            setContas(prev => [extraData.linkedConta, ...prev]);
+          }
+        }
+      } else if (type === 'conta') {
+        if (user) {
+          const path = `users/${user.uid}/contas`;
+          await setDoc(doc(db, path, item.id), item);
+          
+          if (extraData?.linkedTx) {
+            await setDoc(doc(db, `users/${user.uid}/transactions`, extraData.linkedTx.id), extraData.linkedTx);
+          }
+        } else {
+          setContas(prev => [item, ...prev]);
+          if (extraData?.linkedTx) {
+            setTransactions(prev => [extraData.linkedTx, ...prev]);
+          }
+        }
+      } else if (type === 'recorrente') {
+        if (user) {
+          const path = `users/${user.uid}/recurrentes`;
+          await setDoc(doc(db, path, item.id), item);
+        } else {
+          setRecurrentes(prev => [item, ...prev]);
+        }
+      } else if (type === 'meta') {
+        if (user) {
+          const path = `users/${user.uid}/goals`;
+          await setDoc(doc(db, path, item.id), item);
+        } else {
+          setGoals(prev => [item, ...prev]);
+        }
+      } else if (type === 'cofre') {
+        if (user) {
+          const path = `users/${user.uid}/vaults`;
+          await setDoc(doc(db, path, item.id), item);
+          
+          if (extraData?.linkedTxs) {
+            const txPath = `users/${user.uid}/transactions`;
+            for (const tx of extraData.linkedTxs) {
+              await setDoc(doc(db, txPath, tx.id), tx);
+            }
+          }
+        } else {
+          setVaults(prev => [item, ...prev]);
+          if (extraData?.linkedTxs) {
+            setTransactions(prev => [...extraData.linkedTxs, ...prev]);
+          }
+        }
+      } else if (type === 'investment') {
+        if (user) {
+          const path = `users/${user.uid}/investments`;
+          await setDoc(doc(db, path, item.id), item);
+        } else {
+          setInvestments(prev => [item, ...prev]);
+        }
+      } else if (type === 'budget') {
+        if (user) {
+          const path = `users/${user.uid}/budgets`;
+          await setDoc(doc(db, path, item.categoryId), {
+            categoryId: item.categoryId,
+            limit: item.limit,
+            userId: user.uid
+          });
+        } else {
+          setBudgets(prev => ({ ...prev, [item.categoryId]: item.limit }));
+        }
+      } else if (type === 'category') {
+        if (user) {
+          const categoryPath = `users/${user.uid}/categories/${item.id}`;
+          await setDoc(doc(db, categoryPath), item);
+          
+          if (extraData?.budget) {
+            const budgetPath = `users/${user.uid}/budgets/${item.id}`;
+            await setDoc(doc(db, budgetPath), {
+              categoryId: item.id,
+              limit: extraData.budget,
+              userId: user.uid
+            });
+          }
+        } else {
+          setCustomCategories(prev => [item, ...prev]);
+          if (extraData?.budget !== undefined) {
+            setBudgets(prev => ({ ...prev, [item.id]: extraData.budget }));
+          }
+        }
+      }
+      
+      setActiveUndoToast(null);
+    } catch (error) {
+      console.error("Erro ao desfazer exclusão:", error);
+    }
+  };
 
   // States, useMemo filters, and clearAllFilters moved to Transacoes.tsx
 
@@ -837,7 +1021,8 @@ export default function App() {
     
     // Bidirectional sync: check if there is a linked bill (Conta) and delete it
     const contaId = transactionToDelete.linkedContaId || id;
-    const hasMatchingConta = contas.some(c => c.id === contaId);
+    const matchingContaDoc = contas.find(c => c.id === contaId);
+    const hasMatchingConta = !!matchingContaDoc;
 
     if (user) {
       const path = `users/${user.uid}/transactions`;
@@ -885,6 +1070,14 @@ export default function App() {
         }
       }
     }
+
+    triggerUndoToast(
+      `Transação "${transactionToDelete.description}" excluída`,
+      'transaction',
+      transactionToDelete,
+      { linkedConta: matchingContaDoc }
+    );
+
     setSelectedTransaction(null);
   };
 
@@ -1209,6 +1402,8 @@ export default function App() {
   const handleDeleteCategory = async (catId: string) => {
     if (!user) return;
     const categoryPath = `users/${user.uid}/categories/${catId}`;
+    const categoryToDelete = customCategories.find(c => c.id === catId);
+    const budgetLimit = budgets[catId];
     try {
       await deleteDoc(doc(db, categoryPath));
       
@@ -1219,12 +1414,24 @@ export default function App() {
       setIsCategoryModalOpen(false);
       setEditingCategoryId(null);
       setNewCategory({ name: '', icon: '', color: '#64748b' });
+
+      if (categoryToDelete) {
+        triggerUndoToast(
+          `Categoria "${categoryToDelete.name}" excluída`,
+          'category',
+          categoryToDelete,
+          { budget: budgetLimit }
+        );
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, categoryPath);
     }
   };
 
   const handleDeleteBudget = async (categoryId: string) => {
+    const budgetLimit = budgets[categoryId];
+    const budgetItem = { categoryId, limit: budgetLimit };
+
     if (user) {
       const path = `users/${user.uid}/budgets`;
       try {
@@ -1237,6 +1444,13 @@ export default function App() {
       delete updatedBudgets[categoryId];
       setBudgets(updatedBudgets);
     }
+
+    triggerUndoToast(
+      `Limite da categoria "${categoryId}" excluído`,
+      'budget',
+      budgetItem
+    );
+
     setSelectedBudgetCategory(null);
     setBudgetToDelete(null);
   };
@@ -1271,6 +1485,7 @@ export default function App() {
   };
 
   const handleDeleteInvestment = async (id: string) => {
+    const investmentToDeleteDoc = investments.find(inv => inv.id === id);
     if (user) {
       const path = `users/${user.uid}/investments`;
       try {
@@ -1281,6 +1496,15 @@ export default function App() {
     } else {
       setInvestments(investments.filter(inv => inv.id !== id));
     }
+
+    if (investmentToDeleteDoc) {
+      triggerUndoToast(
+        `Investimento "${investmentToDeleteDoc.name}" excluído`,
+        'investment',
+        investmentToDeleteDoc
+      );
+    }
+
     setInvestmentToDelete(null);
   };
 
@@ -2203,7 +2427,7 @@ export default function App() {
             />
           )}
 
-           {activeTab === 'investments' && (
+          {activeTab === 'investments' && (
             <Investimentos 
               investments={investments}
               setIsInvestmentModalOpen={setIsInvestmentModalOpen}
@@ -2220,6 +2444,7 @@ export default function App() {
               setTransactions={setTransactions}
               user={user} 
               theme={theme} 
+              triggerUndoToast={triggerUndoToast}
             />
           )}
 
@@ -2233,6 +2458,7 @@ export default function App() {
               handleUpdateTransaction={handleUpdateTransaction}
               user={user} 
               theme={theme} 
+              triggerUndoToast={triggerUndoToast}
             />
           )}
 
@@ -2243,6 +2469,7 @@ export default function App() {
               user={user} 
               theme={theme}
               onQuickPay={handleQuickPayRecurring}
+              triggerUndoToast={triggerUndoToast}
             />
           )}
 
@@ -2255,6 +2482,7 @@ export default function App() {
               user={user} 
               theme={theme}
               onQuickPay={handleQuickPayConta}
+              triggerUndoToast={triggerUndoToast}
             />
           )}
 
@@ -3340,7 +3568,7 @@ export default function App() {
           }`}
         >
           <Target size={20} />
-          <span className="text-[9px] font-bold">Limites</span>
+          <span className="text-[9px] font-bold">Orçamentos</span>
         </button>
 
         <button 
@@ -4131,6 +4359,57 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast de Notificação com Reverter */}
+      <AnimatePresence>
+        {activeUndoToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className="fixed bottom-6 right-6 z-[9999] w-full max-w-sm sm:max-w-md p-4 bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.4)] flex flex-col overflow-hidden"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 text-rose-400 flex items-center justify-center shrink-0 border border-slate-700 font-bold">
+                  🗑️
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-400 font-medium">Excluído com sucesso</p>
+                  <p className="text-sm font-bold truncate text-slate-200">
+                    {activeUndoToast.message}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleUndoDelete}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-95 text-emerald-400 text-xs font-black rounded-lg transition-all duration-150 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Desfazer</span>
+                </button>
+                <button
+                  onClick={() => setActiveUndoToast(null)}
+                  className="p-1 px-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Countdown Progress Bar */}
+            <div className="relative mt-3 h-1 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div 
+                className="absolute top-0 bottom-0 left-0 bg-emerald-500 rounded-full transition-all duration-100" 
+                style={{ width: `${toastProgress}%` }}
+              />
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

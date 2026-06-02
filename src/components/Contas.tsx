@@ -64,6 +64,7 @@ interface ContasProps {
   onQuickPay?: (conta: Conta) => void;
   transactions?: any[];
   setTransactions?: React.Dispatch<React.SetStateAction<any[]>>;
+  triggerUndoToast?: (message: string, type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', item: any, extraData?: any) => void;
 }
 
 export default function Contas({ 
@@ -73,7 +74,8 @@ export default function Contas({
   theme, 
   onQuickPay,
   transactions,
-  setTransactions
+  setTransactions,
+  triggerUndoToast
 }: ContasProps) {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [contaToDelete, setContaToDelete] = useState<Conta | null>(null);
@@ -367,6 +369,9 @@ export default function Contas({
   };
 
   const handleDelete = async (id: string) => {
+    const contaToDeleteDoc = contas.find(c => c.id === id);
+    const linkedTx = transactions ? transactions.find(t => t.id === id || t.linkedContaId === id) : null;
+    
     // Optimistic Update
     setContas(prev => prev.filter(c => c.id !== id));
 
@@ -386,6 +391,16 @@ export default function Contas({
         handleFirestoreError(err, OperationType.DELETE, `${path}/${id}`);
       }
     }
+
+    if (contaToDeleteDoc && triggerUndoToast) {
+      triggerUndoToast(
+        `Conta "${contaToDeleteDoc.name}" excluída`,
+        'conta',
+        contaToDeleteDoc,
+        { linkedTx }
+      );
+    }
+
     setContaToDelete(null);
   };
 

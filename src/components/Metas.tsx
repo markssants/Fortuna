@@ -42,9 +42,10 @@ interface MetasProps {
   setTransactions: React.Dispatch<React.SetStateAction<any[]>>;
   user: any;
   theme: 'light' | 'dark';
+  triggerUndoToast?: (message: string, type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', item: any, extraData?: any) => void;
 }
 
-export default function Metas({ goals, setGoals, transactions, setTransactions, user, theme }: MetasProps) {
+export default function Metas({ goals, setGoals, transactions, setTransactions, user, theme, triggerUndoToast }: MetasProps) {
   const [isNewGoalModalOpen, setIsNewGoalModalOpen] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
@@ -106,6 +107,7 @@ export default function Metas({ goals, setGoals, transactions, setTransactions, 
   };
 
   const handleDeleteGoal = async (id: string) => {
+    const goalToDeleteDoc = goals.find(g => g.id === id);
     // Optimistic state update
     setGoals(prev => prev.filter(g => g.id !== id));
 
@@ -118,6 +120,15 @@ export default function Metas({ goals, setGoals, transactions, setTransactions, 
         handleFirestoreError(err, OperationType.DELETE, `${path}/${id}`);
       }
     }
+
+    if (goalToDeleteDoc && triggerUndoToast) {
+      triggerUndoToast(
+        `Meta "${goalToDeleteDoc.title}" excluída`,
+        'meta',
+        goalToDeleteDoc
+      );
+    }
+
     setGoalToDelete(null);
   };
 
