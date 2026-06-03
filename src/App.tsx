@@ -1586,18 +1586,15 @@ export default function App() {
         <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-emerald-500/10 dark:bg-emerald-500/15 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-blue-500/10 dark:bg-blue-500/15 rounded-full blur-3xl"></div>
 
-        <div className="flex flex-col items-center max-w-sm w-full text-center space-y-6 relative z-10">
+        <div className="flex flex-col items-center max-w-sm w-full text-center space-y-3 relative z-10">
           <div className="relative">
-            <div className="bg-emerald-600 p-4 rounded-3xl shrink-0 animate-pulse relative z-10 shadow-lg shadow-emerald-500/30">
-              <Wallet className="text-white" size={40} />
+            <div className="bg-transparent p-1 shrink-0 animate-pulse relative z-10 w-40 h-40 flex items-center justify-center overflow-hidden">
+              <img src="/Logotipo Fortuna.png" alt="Fortuna Logo" className="max-w-full max-h-full object-contain" />
             </div>
-            <div className="absolute inset-0 bg-emerald-500/30 rounded-3xl blur-xl animate-ping opacity-60"></div>
+            <div className="absolute inset-0 bg-emerald-500/10 rounded-full blur-xl animate-ping opacity-60"></div>
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-              For<span className="text-emerald-600">tuna</span>
-            </h1>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-2 font-medium">Carregando seu portal financeiro seguro...</p>
+            <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Carregando seu portal financeiro seguro...</p>
           </div>
           <div className="w-16 h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden animate-pulse">
             <div className="h-full bg-emerald-600 rounded-full w-8"></div>
@@ -1615,16 +1612,11 @@ export default function App() {
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-blue-500/5 dark:bg-blue-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2 -z-10"></div>
 
         {/* Top Navbar */}
-        <header className="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between relative z-10">
+        <header className="max-w-7xl mx-auto w-full px-12 py-10 sm:px-20 sm:py-12 flex items-center justify-between relative z-10">
           <div className="flex items-center gap-3">
-            <div className="bg-emerald-600 p-2 rounded-xl shrink-0 shadow-md shadow-emerald-500/10">
-              <Wallet className="text-white" size={24} />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                For<span className="text-emerald-600">tuna</span>
-              </span>
-              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase tracking-tighter border border-slate-200/50 dark:border-slate-800/50">V1.2</span>
+            <div className="relative shrink-0 mt-8 ml-6 sm:ml-12">
+              <img src="/Logotipo Fortuna.png" alt="Fortuna Logo" className="h-20 sm:h-24 w-auto object-contain" />
+              <span className="absolute -top-1 -right-6 text-[9.5px] text-slate-400 dark:text-slate-500 font-mono tracking-tighter select-none font-bold">V1.2</span>
             </div>
           </div>
 
@@ -1830,14 +1822,11 @@ export default function App() {
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
       {/* Sidebar */}
       <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-6 hidden md:flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0">
-        <div className="flex items-center gap-3 mb-10 px-2">
-          <div className="bg-emerald-600 p-2 rounded-lg shrink-0">
-            <Wallet className="text-white" size={24} />
+        <div className="flex items-center justify-center mb-10 mt-6 px-2 w-full">
+          <div className="relative shrink-0">
+            <img src="/Logotipo Fortuna.png" alt="Fortuna Logo" className="h-16 w-auto object-contain" />
+            <span className="absolute -top-0.5 -right-5 text-[8.5px] text-slate-400 dark:text-slate-500 font-mono tracking-tighter select-none font-bold">V1.2</span>
           </div>
-          <h1 className="text-xl font-bold tracking-tight dark:text-white flex items-baseline gap-2">
-            <span>For<span className="text-emerald-600">tuna</span></span>
-            <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase tracking-tighter">V1.2</span>
-          </h1>
         </div>
         
         <nav className="flex-1 space-y-2">
@@ -3675,8 +3664,8 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
-                      <Wallet size={24} />
+                    <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center p-2.5 overflow-hidden">
+                      <img src="/Logotipo Fortuna.png" alt="Fortuna Logo" className="w-full h-full object-contain" />
                     </div>
                     <div className="flex-1 min-w-0 font-sans">
                       <p className="font-bold text-sm block truncate dark:text-slate-100">Modo de Demonstração</p>
