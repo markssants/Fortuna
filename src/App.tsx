@@ -946,6 +946,7 @@ export default function App() {
       essential: true,
       status: 'pago',
       recurring: true,
+      recorrenteId: recorrente.id,
       userId: user ? user.uid : 'demo'
     };
 
@@ -958,6 +959,31 @@ export default function App() {
       }
     } else {
       setTransactions(prev => [transaction, ...prev]);
+    }
+  };
+
+  const handleUndoQuickPayRecurring = async (recorrente: Recorrente) => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const existingTx = transactions.find(t => {
+      if (!t.date) return false;
+      const tDate = new Date(t.date + 'T12:00:00');
+      const isSameMonth = tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
+      if (!isSameMonth) return false;
+      return (t.recorrenteId === recorrente.id) || (t.description?.toLowerCase() === `mensal: ${recorrente.name}`.toLowerCase());
+    });
+
+    if (!existingTx) return;
+
+    if (user) {
+      const path = `users/${user.uid}/transactions`;
+      try {
+        await deleteDoc(doc(db, path, existingTx.id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `${path}/${existingTx.id}`);
+      }
+    } else {
+      setTransactions(prev => prev.filter(t => t.id !== existingTx.id));
     }
   };
 
@@ -2469,6 +2495,8 @@ export default function App() {
               user={user} 
               theme={theme}
               onQuickPay={handleQuickPayRecurring}
+              onUndoPay={handleUndoQuickPayRecurring}
+              transactions={transactions}
               triggerUndoToast={triggerUndoToast}
             />
           )}

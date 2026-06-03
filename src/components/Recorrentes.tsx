@@ -52,13 +52,38 @@ interface RecorrentesProps {
   user: any;
   theme: 'light' | 'dark';
   onQuickPay?: (recorrente: Recorrente) => void;
+  onUndoPay?: (recorrente: Recorrente) => void;
+  transactions?: any[];
   triggerUndoToast?: (message: string, type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', item: any, extraData?: any) => void;
 }
 
-export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, onQuickPay, triggerUndoToast }: RecorrentesProps) {
+const isPaidThisMonth = (item: Recorrente, transactions: any[]) => {
+  const currentMonth = new Date().getMonth(); // 0-11
+  const currentYear = new Date().getFullYear();
+  return transactions.some(t => {
+    if (!t.date) return false;
+    const tDate = new Date(t.date + 'T12:00:00');
+    const isSameMonth = tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
+    if (!isSameMonth) return false;
+
+    // Match by recorrenteId or description match
+    return (t.recorrenteId === item.id) || (t.description?.toLowerCase() === `mensal: ${item.name}`.toLowerCase());
+  });
+};
+
+export default function Recorrentes({ 
+  recurrentes, 
+  setRecurrentes, 
+  user, 
+  theme, 
+  onQuickPay, 
+  onUndoPay,
+  transactions,
+  triggerUndoToast 
+}: RecorrentesProps) {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [recorrenteToDelete, setRecorrenteToDelete] = useState<Recorrente | null>(null);
-  const [filterStatus, setFilterStatus] = useState<'todos' | 'ativo' | 'pausado'>('todos');
+  const [filterStatus, setFilterStatus] = useState<'todos' | 'ativo' | 'pausado' | 'pagos'>('todos');
   const [sortBy, setSortBy] = useState<'dueDate' | 'value'>('dueDate');
 
   // Form states
@@ -209,7 +234,10 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
   const filteredAndSortedList = useMemo(() => {
     return recurrentes
       .filter(r => {
+        const isPaid = isPaidThisMonth(r, transactions || []);
         if (filterStatus === 'todos') return true;
+        if (filterStatus === 'pagos') return isPaid;
+        if (filterStatus === 'ativo') return r.status === 'ativo' && !isPaid;
         return r.status === filterStatus;
       })
       .sort((a, b) => {
@@ -219,7 +247,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
           return b.value - a.value;
         }
       });
-  }, [recurrentes, filterStatus, sortBy]);
+  }, [recurrentes, filterStatus, sortBy, transactions]);
 
   // Analytics
   const totalCommit = useMemo(() => {
@@ -337,6 +365,12 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
           >
             Pausados
           </button>
+          <button
+            onClick={() => setFilterStatus('pagos')}
+            className={`flex-1 md:flex-initial px-4 py-1.5 rounded-lg transition-all text-center cursor-pointer ${filterStatus === 'pagos' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            Pagos
+          </button>
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto justify-end">
@@ -375,6 +409,7 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
           {filteredAndSortedList.map((item) => {
             const expenseCategory = CATEGORIES.find(c => c.id === item.category);
             const isPaused = item.status === 'pausado';
+            const isPaid = isPaidThisMonth(item, transactions || []);
 
             return (
               <motion.div 
@@ -383,7 +418,9 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                 className={`bg-white dark:bg-slate-900 rounded-3xl border shadow-xs p-5 flex flex-col justify-between relative overflow-hidden transition-all duration-300 group/item cursor-pointer ${
                   isPaused 
                     ? 'border-slate-100 dark:border-slate-900 opacity-65 grayscale hover:grayscale-35' 
-                    : 'border-slate-100 dark:border-slate-800/80 hover:border-slate-200 hover:shadow-md'
+                    : isPaid
+                      ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-500/[0.01]'
+                      : 'border-slate-100 dark:border-slate-800/80 hover:border-slate-200 hover:shadow-md'
                 }`}
                 onClick={() => handleOpenDetails(item)}
               >
@@ -406,6 +443,12 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                     </div>
 
                     <div className="flex items-center gap-1">
+                      {isPaid && !isPaused && (
+                        <div className="px-2 py-1 bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg text-[9px] font-black flex items-center gap-1 shrink-0">
+                          ✓ Quitado
+                        </div>
+                      )}
+                      
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleStatus(item); }}
                         className={`p-1.5 rounded-lg border text-slate-500 transition-colors cursor-pointer ${
@@ -454,13 +497,27 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                     </span>
                   </div>
 
-                  {onQuickPay && !isPaused && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onQuickPay(item); }}
-                      className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/25 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 font-black rounded-xl text-[10px] whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <CheckCircle size={10} /> Quitar / Registrar
-                    </button>
+                  {!isPaused && (
+                    isPaid ? (
+                      onUndoPay && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onUndoPay(item); }}
+                          className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/25 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/30 font-black rounded-xl text-[10px] whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition-colors"
+                          title="Marcar como não pago e remover da lista de transações"
+                        >
+                          <X size={10} /> Não Quitado
+                        </button>
+                      )
+                    ) : (
+                      onQuickPay && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onQuickPay(item); }}
+                          className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/25 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 font-black rounded-xl text-[10px] whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <CheckCircle size={10} /> Quitar / Registrar
+                        </button>
+                      )
+                    )
                   )}
                 </div>
               </motion.div>
@@ -737,16 +794,56 @@ export default function Recorrentes({ recurrentes, setRecurrentes, user, theme, 
                         {selectedRecorrente.status === 'ativo' ? 'Ativo' : 'Pausado'}
                       </span>
                     </div>
+
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-extrabold uppercase text-[10px]">Situação de Pagamento</span>
+                      <span className={`font-black px-3 py-1 rounded-lg ${
+                        isPaidThisMonth(selectedRecorrente, transactions || [])
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' 
+                          : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                      }`}>
+                        {isPaidThisMonth(selectedRecorrente, transactions || []) ? '✓ Quitado este mês' : '⏳ Pendente'}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    {selectedRecorrente.status === 'ativo' && (
+                      isPaidThisMonth(selectedRecorrente, transactions || []) ? (
+                        onUndoPay && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              onUndoPay(selectedRecorrente);
+                              setSelectedRecorrente(null);
+                            }}
+                            className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center transition-all active:scale-[0.98]"
+                          >
+                            Marcar Não Quitado
+                          </button>
+                        )
+                      ) : (
+                        onQuickPay && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              onQuickPay(selectedRecorrente);
+                              setSelectedRecorrente(null);
+                            }}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center transition-all active:scale-[0.98]"
+                          >
+                            Quitar / Registrar
+                          </button>
+                        )
+                      )
+                    )}
                     <button 
                       type="button"
                       onClick={() => {
                         setSelectedRecorrente(null);
                         setIsEditMode(false);
                       }}
-                      className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center"
+                      className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-white py-3 rounded-2xl font-black text-xs cursor-pointer text-center"
                     >
                       Fechar Detalhes
                     </button>
