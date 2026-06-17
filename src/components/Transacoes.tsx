@@ -56,21 +56,21 @@ const getGroupHeaderLabel = (dateStr: string) => {
     const targetDate = new Date(year, month - 1, day);
     targetDate.setHours(0, 0, 0, 0);
     
-    let prefix = '';
+    let suffix = '';
     if (targetDate.getTime() === today.getTime()) {
-      prefix = 'Hoje • ';
+      suffix = ' • Hoje';
     } else if (targetDate.getTime() === yesterday.getTime()) {
-      prefix = 'Ontem • ';
+      suffix = ' • Ontem';
     } else {
       // weekday
       const weekdayStr = targetDate.toLocaleDateString('pt-BR', { weekday: 'long' });
-      prefix = weekdayStr.charAt(0).toUpperCase() + weekdayStr.slice(1) + ' • ';
+      suffix = ' • ' + weekdayStr.charAt(0).toUpperCase() + weekdayStr.slice(1);
     }
     
     const monthStr = dateObj.toLocaleDateString('pt-BR', { month: 'long' });
     const capitalizedMonth = monthStr.charAt(0).toUpperCase() + monthStr.slice(1);
     
-    return `${prefix}${day} de ${capitalizedMonth} de ${year}`;
+    return `${day} de ${capitalizedMonth} de ${year}${suffix}`;
   } catch (e) {
     return dateStr;
   }
