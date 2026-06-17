@@ -391,32 +391,25 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
               <div 
                 key={catId} 
                 onClick={() => setSelectedBudgetCategory(catId)}
-                className={`p-6 rounded-[2rem] border cursor-pointer transition-all duration-300 active:scale-[0.99] group relative overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md ${
+                className={`p-6 rounded-[2rem] border cursor-pointer transition-all duration-300 active:scale-[0.99] group relative overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md hover:-translate-y-0.5 ${
                   isHidden ? 'opacity-50 saturate-[50%] hover:opacity-85 hover:saturate-100' : ''
                 }`}
                 style={{ 
-                  backgroundColor: `${category.color}08`,
-                  borderColor: isExceeded ? '#ef444455' : `${category.color}25`,
+                  backgroundColor: `${category.color}15`,
+                  borderColor: isExceeded ? '#ef444490' : `${category.color}35`,
                 }}
               >
-                {/* Visual top decorative accent matching the color */}
-                <div 
-                  className="absolute top-0 left-0 right-0 h-1 opacity-60"
-                  style={{ backgroundColor: category.color }}
-                />
-
                 {/* Header Information */}
                 <div className="flex justify-between items-start mb-5 relative z-10">
                   <div className="flex items-center gap-3">
                     {(() => {
                       const info = getCategoryIconAndStyle(catId);
                       const icon = category.icon || info.icon;
-                      const catColor = category.color || '#64748b';
                       
                       return (
                         <div 
                           className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shadow-xs group-hover:scale-105 transition-transform duration-300 shrink-0"
-                          style={{ backgroundColor: `${catColor}15`, color: catColor }}
+                          style={{ backgroundColor: `${category.color}25`, color: category.color }}
                         >
                           {icon}
                         </div>
@@ -424,7 +417,7 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                     })()}
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-extrabold text-base text-slate-800 dark:text-slate-100 tracking-tight leading-tight group-hover:text-indigo-650 dark:group-hover:text-indigo-400 transition-colors">
+                        <span className="font-extrabold text-base text-slate-800 dark:text-slate-100 tracking-tight leading-tight">
                           {category.name}
                         </span>
                         {isHidden && (
@@ -435,28 +428,28 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                         {numLimit > 0 && (
                           <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full tracking-wider ${
                             isExceeded 
-                              ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400' 
-                              : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
+                              ? 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200/30' 
+                              : 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200/30'
                           }`}>
                             {isExceeded ? 'Estourou' : 'Limite Ativo'}
                           </span>
                         )}
                       </div>
-                      <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest mt-1 block font-mono">
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1 block font-mono">
                         {(stats.entriesCount + stats.exitsCount)} lançamentos no total
                       </span>
                     </div>
                   </div>
 
                   {/* Settings and Config Quick buttons */}
-                  <div className="flex items-center gap-1.5 shrink-0 bg-slate-200/20 dark:bg-slate-800/30 p-1 rounded-xl">
+                  <div className="flex items-center gap-1.5 shrink-0 bg-slate-200/35 dark:bg-slate-800/40 p-1 rounded-xl">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setNewBudget({ categoryId: catId, limit: numLimit > 0 ? numLimit.toString() : '' });
                         setIsBudgetModalOpen(true);
                       }}
-                      className="p-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-slate-450 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all cursor-pointer"
                       title="Definir/Editar Limite"
                     >
                       <Pencil size={12} />
@@ -472,7 +465,7 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                         });
                         setIsCategoryModalOpen(true);
                       }}
-                      className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-slate-450 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all cursor-pointer"
                       title="Personalizar Categoria"
                     >
                       <Palette size={12} />
@@ -486,7 +479,7 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                           setHiddenBudgets(prev => [...prev, catId]);
                         }
                       }}
-                      className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-450 hover:text-slate-700 dark:hover:text-slate-300 transition-all cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-all cursor-pointer"
                       title={isHidden ? "Exibir Categoria" : "Ocultar Categoria"}
                     >
                       {isHidden ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -495,19 +488,19 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                 </div>
                 
                 {/* Real-time Category Flow (Entradas x Saídas) */}
-                <div className="grid grid-cols-2 gap-4 bg-white/45 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-100/50 dark:border-slate-800/40 mb-4 text-xs">
+                <div className="grid grid-cols-2 gap-4 bg-white/70 dark:bg-slate-950/40 p-3 rounded-2xl border border-slate-200/50 dark:border-slate-800/30 mb-4 text-xs">
                   {/* Flow Entrada */}
                   <div>
                     <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500 font-bold text-[9px] uppercase tracking-wide">
-                      <TrendingUp size={11} className="text-emerald-500" />
+                      <TrendingUp size={11} className="text-emerald-650 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/50 rounded p-0.5 animate-pulse" />
                       <span>Entradas</span>
                     </div>
                     <div className="flex items-baseline gap-1 mt-0.5">
-                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-none">
+                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-150 leading-none">
                         R$ {stats.entries.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
                       {stats.entriesCount > 0 && (
-                        <span className="text-[9px] text-slate-400 font-mono font-medium">({stats.entriesCount}x)</span>
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium">({stats.entriesCount}x)</span>
                       )}
                     </div>
                   </div>
@@ -515,15 +508,15 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                   {/* Flow Saída */}
                   <div>
                     <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500 font-bold text-[9px] uppercase tracking-wide">
-                      <TrendingDown size={11} className="text-rose-700" />
+                      <TrendingDown size={11} className="text-rose-650 bg-rose-100 dark:text-rose-455 dark:bg-rose-950/50 rounded p-0.5" />
                       <span>Saídas</span>
                     </div>
                     <div className="flex items-baseline gap-1 mt-0.5">
-                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-100 leading-none">
+                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-150 leading-none">
                         R$ {stats.exits.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
                       {stats.exitsCount > 0 && (
-                        <span className="text-[9px] text-slate-400 font-mono font-medium">({stats.exitsCount}x)</span>
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono font-medium">({stats.exitsCount}x)</span>
                       )}
                     </div>
                   </div>
@@ -534,29 +527,29 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                   {/* Net Balance info */}
                   <div className="flex items-center justify-between text-[11px] font-bold">
                     <span className="text-slate-400 dark:text-slate-500 uppercase text-[9px] tracking-wide">Balanço Líquido</span>
-                    <span className={balanceNet > 0 ? 'text-emerald-600 dark:text-emerald-400' : balanceNet < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-slate-400 dark:text-slate-500'}>
+                    <span className={`font-black text-xs ${balanceNet > 0 ? 'text-emerald-600 dark:text-emerald-400' : balanceNet < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-550'}`}>
                       {balanceNet > 0 ? '+' : ''} R$ {balanceNet.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
 
                   {/* Budget limits controls split */}
                   {numLimit > 0 ? (
-                    <div className="space-y-1.5 pt-1 border-t border-slate-150/40 dark:border-slate-800/30">
+                    <div className="space-y-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/40">
                       <div className="flex justify-between text-[11px] font-bold">
-                        <span className="text-slate-500 dark:text-slate-400">Progresso do Limite</span>
-                        <div className="flex items-center gap-1.5 font-mono">
-                          <span className={isExceeded ? 'text-rose-600 dark:text-rose-450 font-extrabold' : 'text-slate-450 dark:text-slate-500'}>
+                        <span className="text-slate-500 dark:text-slate-405">Progresso do Limite</span>
+                        <div className="flex items-center gap-1.5 font-mono text-xs">
+                          <span className={isExceeded ? 'text-rose-600 dark:text-rose-400 font-black underline decoration-rose-500/50' : 'text-slate-700 dark:text-slate-300 font-medium'}>
                             R$ {spent.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
-                          <span className="text-slate-350 dark:text-slate-600">/</span>
-                          <span className="text-slate-600 dark:text-slate-400 font-medium">
+                          <span className="text-slate-300 dark:text-slate-650">/</span>
+                          <span className="text-slate-500 dark:text-slate-450 font-bold">
                             R$ {numLimit.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </span>
                         </div>
                       </div>
 
                       {/* Progress Bar visual indicator */}
-                      <div className="h-2 w-full bg-slate-100 hover:bg-slate-150/40 dark:bg-slate-800 rounded-full overflow-hidden transition-all relative">
+                      <div className="h-2 w-full bg-slate-200/50 dark:bg-slate-800 rounded-full overflow-hidden transition-all relative">
                         <div 
                           className="h-full rounded-full transition-all duration-500"
                           style={{ 
@@ -569,25 +562,21 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
                       {/* Restante Info Footer card */}
                       <div className="flex justify-between items-center text-[10px] pt-0.5">
                         <span className="text-slate-400 dark:text-slate-500">Saldo Planejado Restante</span>
-                        <span className={`font-black ${numLimit - spent < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                        <span className={`font-extrabold ${numLimit - spent < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
                           R$ {(numLimit - spent).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                     </div>
                   ) : (
                     /* Show visual button/option to set Limit when limit is not defined */
-                    <div className="pt-2 border-t border-slate-150/40 dark:border-slate-800/30">
+                    <div className="pt-2 border-t border-slate-200/50 dark:border-slate-800/40">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setNewBudget({ categoryId: catId, limit: '' });
                           setIsBudgetModalOpen(true);
                         }}
-                        className="w-full py-2.5 px-3 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all hover:bg-slate-100/30 dark:hover:bg-slate-900/30 cursor-pointer"
-                        style={{ 
-                          color: category.color,
-                          borderColor: `${category.color}15`,
-                        }}
+                        className="w-full py-2.5 px-3 border border-dashed border-slate-200 hover:border-slate-300 dark:border-slate-800 dark:hover:border-slate-700 bg-white/50 hover:bg-white dark:bg-slate-900/30 dark:hover:bg-slate-900/50 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-400 transition-all cursor-pointer"
                       >
                         <Plus size={11} />
                         Definir Limite de Gasto Mensal
