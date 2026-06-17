@@ -331,6 +331,40 @@
         "userId": { "type": "string" }
       },
       "required": ["id", "name", "icon", "color", "userId"]
+    },
+    "company": {
+      "title": "Company",
+      "description": "User business or corporate profile (PJ)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "segment": { "type": "string" },
+        "color": { "type": "string" },
+        "icon": { "type": "string" },
+        "initialCapital": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "segment", "color", "createdAt"]
+    },
+    "companyTransaction": {
+      "title": "Company Transaction",
+      "description": "Financial transaction belonging to a specific company/PJ",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["entrada", "saida"] },
+        "value": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "category": { "type": "string" },
+        "bank": { "type": "string" },
+        "description": { "type": "string" },
+        "cnpjDestination": { "type": "string" },
+        "status": { "type": "string", "enum": ["pago", "pendente"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "value", "date", "category", "bank", "description", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -373,6 +407,14 @@
     "/users/{userId}/contas/{contaId}": {
       "schema": "conta",
       "description": "Per-user list of bills to pay and boletos"
+    },
+    "/users/{userId}/companies/{companyId}": {
+      "schema": "company",
+      "description": "Per-user registered companies/businesses (PJ)"
+    },
+    "/users/{userId}/companies/{companyId}/transactions/{transactionId}": {
+      "schema": "companyTransaction",
+      "description": "Financial operations belonging to a registered company (PJ)"
     }
   }
 }

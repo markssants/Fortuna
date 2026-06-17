@@ -17,6 +17,18 @@ import {
   Layers,
   Scale
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  PieChart as RechartsPieChart, 
+  Pie, 
+  Cell, 
+  Tooltip as RechartsTooltip, 
+  BarChart as RechartsBarChart, 
+  Bar, 
+  XAxis, 
+  YAxis,
+  CartesianGrid
+} from 'recharts';
 import { CATEGORIES, getCategoryIconAndStyle } from '../constants';
 
 interface Transaction {
@@ -110,6 +122,51 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
 
     return stats;
   }, [categories, transactions]);
+
+  const [chartView, setChartView] = useState<'donut' | 'bar'>('donut');
+  const [showCharts, setShowCharts] = useState(true);
+
+  // Calculations for incoming categories
+  const entriesChartData = useMemo(() => {
+    return categories
+      .map(c => {
+        const stats = categoryStats[c.id] || { entries: 0, exits: 0, entriesCount: 0, exitsCount: 0 };
+        return {
+          id: c.id,
+          name: c.name,
+          value: parseFloat(stats.entries.toFixed(2)),
+          color: c.color || '#64748b',
+          icon: c.icon || getCategoryIconAndStyle(c.id).icon || '📁'
+        };
+      })
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [categories, categoryStats]);
+
+  // Calculations for outgoing categories
+  const exitsChartData = useMemo(() => {
+    return categories
+      .map(c => {
+        const stats = categoryStats[c.id] || { entries: 0, exits: 0, entriesCount: 0, exitsCount: 0 };
+        return {
+          id: c.id,
+          name: c.name,
+          value: parseFloat(stats.exits.toFixed(2)),
+          color: c.color || '#64748b',
+          icon: c.icon || getCategoryIconAndStyle(c.id).icon || '📁'
+        };
+      })
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [categories, categoryStats]);
+
+  const totalEntriesChart = useMemo(() => {
+    return entriesChartData.reduce((acc, curr) => acc + curr.value, 0);
+  }, [entriesChartData]);
+
+  const totalExitsChart = useMemo(() => {
+    return exitsChartData.reduce((acc, curr) => acc + curr.value, 0);
+  }, [exitsChartData]);
 
   // General dashboard summary stats
   const dashboardStats = useMemo(() => {
@@ -294,6 +351,301 @@ const Orcamentos: React.FC<OrcamentosProps> = ({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Dashboard de Gráficos de Entradas e Saídas */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 p-6 rounded-[2rem] shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="p-2 bg-indigo-505/10 bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-650 dark:text-indigo-400 rounded-xl">
+              <Layers size={18} />
+            </span>
+            <div>
+              <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100">
+                Análise de Distribuição por Categoria
+              </h4>
+              <p className="text-[10px] text-slate-400 font-extrabold uppercase">Distribuição de Entradas vs Saídas</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Chart Type Selector */}
+            <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/40 dark:border-slate-700/50">
+              <button
+                onClick={() => setChartView('donut')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  chartView === 'donut'
+                    ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Rosca
+              </button>
+              <button
+                onClick={() => setChartView('bar')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  chartView === 'bar'
+                    ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Barras
+              </button>
+            </div>
+
+            {/* Toggle Visibility */}
+            <button
+              onClick={() => setShowCharts(!showCharts)}
+              className="p-2 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/40 dark:hover:bg-slate-800/85 rounded-xl border border-slate-200/35 dark:border-slate-700/35 text-slate-500 transition-all cursor-pointer"
+              title={showCharts ? "Recolher Gráficos" : "Expandir Gráficos"}
+            >
+              {showCharts ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </div>
+
+        {showCharts && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-2">
+            {/* COLUMN 1: ENTRADAS */}
+            <div className="bg-slate-50/20 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/60 p-5 rounded-3xl space-y-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                    <TrendingUp size={14} className="text-emerald-500" />
+                    Entradas por Categoria
+                  </span>
+                  <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400 font-mono">
+                    Total: R$ {totalEntriesChart.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-6">
+                  {entriesChartData.length > 0 ? (
+                    <>
+                      {/* Interactive Visual chart container */}
+                      <div className="w-full sm:w-1/2 h-[200px] relative flex items-center justify-center">
+                        {chartView === 'donut' ? (
+                          <>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={entriesChartData}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={55}
+                                  outerRadius={75}
+                                  paddingAngle={3}
+                                  dataKey="value"
+                                  stroke="none"
+                                >
+                                  {entriesChartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip 
+                                  formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Total']}
+                                  contentStyle={{ 
+                                    backgroundColor: '#0f172a', 
+                                    borderColor: '#1e293b',
+                                    borderRadius: '12px',
+                                    color: '#ffffff',
+                                    fontSize: '11px',
+                                    fontWeight: 'bold'
+                                  }}
+                                />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                            {/* Central Text Hole */}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total Entrou</span>
+                              <span className="text-xs font-black text-slate-800 dark:text-slate-100">
+                                R$ {totalEntriesChart >= 1000 ? `${(totalEntriesChart / 1000).toFixed(1)}k` : totalEntriesChart.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsBarChart data={entriesChartData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" opacity={0.3} />
+                              <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 'bold' }} tickLine={false} axisLine={false} />
+                              <YAxis tick={{ fontSize: 9, fontWeight: 'bold' }} tickLine={false} axisLine={false} />
+                              <RechartsTooltip 
+                                formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
+                                contentStyle={{ 
+                                  backgroundColor: '#0f172a', 
+                                  borderColor: '#1e293b',
+                                  borderRadius: '12px',
+                                  color: '#ffffff',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}
+                              />
+                              <Bar dataKey="value" radius={[5, 5, 0, 0]} maxBarSize={30}>
+                                {entriesChartData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                              </Bar>
+                            </RechartsBarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+
+                      {/* Legend statistics list */}
+                      <div className="w-full sm:w-1/2 space-y-2 max-h-[190px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                        {entriesChartData.map((item) => {
+                          const percent = totalEntriesChart > 0 ? (item.value / totalEntriesChart) * 105 : 0;
+                          const fixedPercent = Math.min(percent, 100);
+                          return (
+                            <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-white/45 dark:bg-slate-950/20 border border-slate-100/60 dark:border-slate-800/40 rounded-xl hover:scale-[1.01] transition-transform">
+                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                <span className="text-lg shrink-0 select-none">{item.icon}</span>
+                                <span className="font-extrabold text-slate-700 dark:text-slate-200 truncate">{item.name}</span>
+                              </div>
+                              <div className="flex flex-col items-end shrink-0 pl-1">
+                                <span className="font-black text-slate-800 dark:text-slate-100">
+                                  R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 font-mono">
+                                  {fixedPercent.toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 w-full text-center">
+                      <span className="text-3xl mb-1 select-none">📊</span>
+                      <span className="font-bold text-xs">Nenhum lançamento de entrada registrado</span>
+                      <span className="text-[10px] text-slate-450 mt-0.5">Lançamentos de receita alimentarão esse gráfico.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* COLUMN 2: SAÍDAS */}
+            <div className="bg-slate-50/20 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/60 p-5 rounded-3xl space-y-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
+                    <TrendingDown size={14} className="text-rose-500" />
+                    Saídas por Categoria
+                  </span>
+                  <span className="font-bold text-sm text-rose-600 dark:text-rose-400 font-mono">
+                    Total: R$ {totalExitsChart.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-6">
+                  {exitsChartData.length > 0 ? (
+                    <>
+                      {/* Interactive Visual chart container */}
+                      <div className="w-full sm:w-1/2 h-[200px] relative flex items-center justify-center">
+                        {chartView === 'donut' ? (
+                          <>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={exitsChartData}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={55}
+                                  outerRadius={75}
+                                  paddingAngle={3}
+                                  dataKey="value"
+                                  stroke="none"
+                                >
+                                  {exitsChartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip 
+                                  formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Total']}
+                                  contentStyle={{ 
+                                    backgroundColor: '#0f172a', 
+                                    borderColor: '#1e293b',
+                                    borderRadius: '12px',
+                                    color: '#ffffff',
+                                    fontSize: '11px',
+                                    fontWeight: 'bold'
+                                  }}
+                                />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                            {/* Central Text Hole */}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+                              <span className="text-[10px] text-slate-400 font-extrabold uppercase">Total Saiu</span>
+                              <span className="text-xs font-black text-slate-800 dark:text-slate-100">
+                                R$ {totalExitsChart >= 1000 ? `${(totalExitsChart / 1000).toFixed(1)}k` : totalExitsChart.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RechartsBarChart data={exitsChartData} margin={{ top: 10, right: 10, left: -25, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" opacity={0.3} />
+                              <XAxis dataKey="name" tick={{ fontSize: 9, fontWeight: 'bold' }} tickLine={false} axisLine={false} />
+                              <YAxis tick={{ fontSize: 9, fontWeight: 'bold' }} tickLine={false} axisLine={false} />
+                              <RechartsTooltip 
+                                formatter={(value: any) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`]}
+                                contentStyle={{ 
+                                  backgroundColor: '#0f172a', 
+                                  borderColor: '#1e293b',
+                                  borderRadius: '12px',
+                                  color: '#ffffff',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}
+                              />
+                              <Bar dataKey="value" radius={[5, 5, 0, 0]} maxBarSize={30}>
+                                {exitsChartData.map((entry, index) => (
+                                  <Cell key={`cell-${index}`} fill={entry.color} />
+                                ))}
+                              </Bar>
+                            </RechartsBarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+
+                      {/* Legend statistics list */}
+                      <div className="w-full sm:w-1/2 space-y-2 max-h-[190px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 select-none">
+                        {exitsChartData.map((item) => {
+                          const percent = totalExitsChart > 0 ? (item.value / totalExitsChart) * 100 : 0;
+                          return (
+                            <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-white/45 dark:bg-slate-950/20 border border-slate-100/60 dark:border-slate-800/40 rounded-xl hover:scale-[1.01] transition-transform">
+                              <div className="flex items-center gap-2 min-w-0 pr-1">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                <span className="text-lg shrink-0 select-none">{item.icon}</span>
+                                <span className="font-extrabold text-slate-700 dark:text-slate-200 truncate">{item.name}</span>
+                              </div>
+                              <div className="flex flex-col items-end shrink-0 pl-1">
+                                <span className="font-black text-slate-800 dark:text-slate-100">
+                                  R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                                <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 font-mono">
+                                  {percent.toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 w-full text-center">
+                      <span className="text-3xl mb-1 select-none">📊</span>
+                      <span className="font-bold text-xs">Nenhum lançamento de saída registrado</span>
+                      <span className="text-[10px] text-slate-450 mt-0.5">Lançamentos de despesa alimentarão esse gráfico.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Interactive Controls & Filters Search Row */}

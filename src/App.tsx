@@ -19,6 +19,7 @@ import {
   Wallet,
   PieChart as PieChartIcon,
   Building2,
+  User,
   Bookmark,
   Target,
   Sun,
@@ -81,6 +82,8 @@ import Orcamentos from './components/Orcamentos';
 import Investimentos from './components/Investimentos';
 import Transacoes from './components/Transacoes';
 import Calendario from './components/Calendario';
+import Empresas from './components/Empresas';
+import Categorias from './components/Categorias';
 import { CATEGORIES, getCategoryIconAndStyle, BANKS, formatDateDisplay, getStatusColorClasses } from './constants';
 
 const renderPieLabel = (props: any) => {
@@ -114,6 +117,15 @@ export default function App() {
   const [showPasswordWall, setShowPasswordWall] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [isPessoalOpen, setIsPessoalOpen] = useState(true);
+
+  // Auto-expand "Pessoal" master tab when a child tab is active
+  useEffect(() => {
+    const personalTabs = ['transactions', 'budgets', 'contas', 'recurrentes', 'cofre', 'goals', 'investments', 'calendar', 'categories'];
+    if (personalTabs.includes(activeTab)) {
+      setIsPessoalOpen(true);
+    }
+  }, [activeTab]);
 
   // States
   const [transactions, setTransactions] = useState<any[]>([
@@ -1565,17 +1577,21 @@ export default function App() {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-  const SidebarItem = ({ icon: Icon, label, id }: { icon: any, label: string, id: string }) => (
+  const SidebarItem = ({ icon: Icon, label, id, isSubItem = false }: { icon: any, label: string, id: string, isSubItem?: boolean }) => (
     <button
       onClick={() => setActiveTab(id)}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+      className={`w-full flex items-center gap-3 rounded-xl transition-all ${
+        isSubItem 
+          ? 'px-3.5 py-2 text-sm' 
+          : 'px-4 py-3'
+      } ${
         activeTab === id 
           ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20' 
           : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
       }`}
     >
-      <Icon size={20} />
-      <span className="font-medium">{label}</span>
+      <Icon size={isSubItem ? 16 : 20} className="shrink-0" />
+      <span className="font-medium truncate">{label}</span>
     </button>
   );
 
@@ -1829,16 +1845,56 @@ export default function App() {
           </div>
         </div>
         
-        <nav className="flex-1 space-y-2">
+        <nav className="flex-1 space-y-2 select-none">
           <SidebarItem icon={LayoutDashboard} label="Visão Geral" id="dashboard" />
-          <SidebarItem icon={List} label="Transações" id="transactions" />
-          <SidebarItem icon={Target} label="Orçamentos" id="budgets" />
-          <SidebarItem icon={Receipt} label="Contas a Pagar" id="contas" />
-          <SidebarItem icon={Repeat} label="Recorrentes" id="recurrentes" />
-          <SidebarItem icon={Lock} label="Cofre" id="cofre" />
-          <SidebarItem icon={Trophy} label="Metas" id="goals" />
-          <SidebarItem icon={TrendingUp} label="Investimentos" id="investments" />
-          <SidebarItem icon={Calendar} label="Calendário" id="calendar" />
+          
+          {/* Aba Mestre "Pessoal" */}
+          <div className="space-y-1">
+            <button
+              onClick={() => setIsPessoalOpen(!isPessoalOpen)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                ['transactions', 'budgets', 'contas', 'recurrentes', 'cofre', 'goals', 'investments', 'calendar', 'categories'].includes(activeTab)
+                  ? 'text-emerald-600 dark:text-emerald-500 font-bold bg-emerald-50/20 dark:bg-emerald-950/10'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <User size={20} className="shrink-0" />
+                <span className="font-medium">Pessoal</span>
+              </div>
+              <motion.div
+                animate={{ rotate: isPessoalOpen ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+                className="text-slate-400 shrink-0"
+              >
+                <ChevronDown size={16} />
+              </motion.div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {isPessoalOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  className="overflow-hidden ml-4 pl-2 border-l border-slate-100 dark:border-slate-800/80 space-y-1"
+                >
+                  <SidebarItem icon={List} label="Transações" id="transactions" isSubItem />
+                  <SidebarItem icon={Target} label="Orçamentos" id="budgets" isSubItem />
+                  <SidebarItem icon={Receipt} label="Contas a Pagar" id="contas" isSubItem />
+                  <SidebarItem icon={Repeat} label="Recorrentes" id="recurrentes" isSubItem />
+                  <SidebarItem icon={Lock} label="Cofre" id="cofre" isSubItem />
+                  <SidebarItem icon={Trophy} label="Metas" id="goals" isSubItem />
+                  <SidebarItem icon={TrendingUp} label="Investimentos" id="investments" isSubItem />
+                  <SidebarItem icon={Calendar} label="Calendário" id="calendar" isSubItem />
+                  <SidebarItem icon={Tag} label="Categorias" id="categories" isSubItem />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <SidebarItem icon={Building2} label="Minhas Empresas (PJ)" id="empresas" />
         </nav>
 
         <div className="mt-8 space-y-4">
@@ -2508,6 +2564,25 @@ export default function App() {
               transactions={transactions} 
               theme={theme} 
               onSelectTransaction={setSelectedTransaction}
+            />
+          )}
+
+          {activeTab === 'empresas' && (
+            <Empresas 
+              user={user} 
+              theme={theme}
+            />
+          )}
+
+          {activeTab === 'categories' && (
+            <Categorias
+              categories={mergedCategories}
+              customCategories={customCategories}
+              transactions={transactions}
+              user={user}
+              theme={theme}
+              triggerUndoToast={triggerUndoToast}
+              budgets={budgets}
             />
           )}
         </AnimatePresence>
@@ -3763,6 +3838,42 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <Calendar size={18} className="text-indigo-500" />
                     <span className="text-sm">Calendário de Contas</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('categories');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'categories' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Tag size={18} className="text-emerald-500" />
+                    <span className="text-sm font-semibold">Categorias</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('empresas');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'empresas' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Building2 size={18} className="text-emerald-500" />
+                    <span className="text-sm font-semibold">Minhas Empresas (PJ)</span>
                   </div>
                   <ChevronRight size={16} className="text-slate-400" />
                 </button>

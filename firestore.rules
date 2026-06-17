@@ -16,7 +16,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
     }
 
     function incoming() {
@@ -139,6 +139,43 @@ service cloud.firestore {
         && data.userId == userId;
     }
 
+    function isValidCompany(data) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.segment is string
+        && data.segment.size() <= 128
+        && data.color is string
+        && data.color.size() <= 64
+        && (!('cnpj' in data) || (data.cnpj is string && data.cnpj.size() <= 32))
+        && (!('icon' in data) || (data.icon is string && data.icon.size() <= 64))
+        && (!('initialCapital' in data) || (data.initialCapital is number))
+        && data.createdAt is string
+        && data.createdAt.size() <= 64;
+    }
+
+    function isValidCompanyTransaction(data) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.type is string
+        && (data.type == 'entrada' || data.type == 'saida')
+        && data.value is number
+        && data.date is string
+        && data.date.size() == 10
+        && data.category is string
+        && data.category.size() <= 128
+        && data.bank is string
+        && data.bank.size() <= 128
+        && data.description is string
+        && data.description.size() <= 500
+        && (!('cnpjDestination' in data) || (data.cnpjDestination is string && data.cnpjDestination.size() <= 32))
+        && data.status is string
+        && (data.status == 'pago' || data.status == 'pendente')
+        && data.createdAt is string
+        && data.createdAt.size() <= 64;
+    }
+
     // 4. Matches & Path Definitions
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -214,6 +251,21 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(contaId) && isValidConta(incoming(), userId);
         allow update: if isOwner(userId) && isValidId(contaId) && isValidConta(incoming(), userId);
         allow delete: if isOwner(userId) && isValidId(contaId);
+      }
+
+      // Subcollection for Companies/PJ
+      match /companies/{companyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(companyId) && isValidCompany(incoming());
+        allow update: if isOwner(userId) && isValidId(companyId) && isValidCompany(incoming());
+        allow delete: if isOwner(userId) && isValidId(companyId);
+
+        match /transactions/{transactionId} {
+          allow read: if isOwner(userId);
+          allow create: if isOwner(userId) && isValidId(transactionId) && isValidCompanyTransaction(incoming());
+          allow update: if isOwner(userId) && isValidId(transactionId) && isValidCompanyTransaction(incoming());
+          allow delete: if isOwner(userId) && isValidId(transactionId);
+        }
       }
     }
   }
