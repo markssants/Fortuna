@@ -392,8 +392,13 @@ export default function Dividas({
                           {divida.creditor}
                         </h3>
                         {divida.description && (
-                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                             {divida.description}
+                          </p>
+                        )}
+                        {divida.notes && (
+                          <p className="text-sm text-slate-400 dark:text-slate-500 mt-2 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">
+                            {divida.notes}
                           </p>
                         )}
                       </div>
