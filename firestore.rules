@@ -112,6 +112,22 @@ service cloud.firestore {
         && data.userId == userId;
     }
 
+    function isValidDivida(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.creditor is string
+        && data.creditor.size() <= 256
+        && data.amount is number
+        && data.dueDate is string
+        && data.dueDate.size() == 10
+        && data.description is string
+        && data.description.size() <= 500
+        && data.status is string
+        && (data.status == 'pago' || data.status == 'pendente' || data.status == 'atrasada')
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.userId == userId;
+    }
+
     function isValidConta(data, userId) {
       return data.id is string
         && data.id.size() <= 128
@@ -251,6 +267,14 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(contaId) && isValidConta(incoming(), userId);
         allow update: if isOwner(userId) && isValidId(contaId) && isValidConta(incoming(), userId);
         allow delete: if isOwner(userId) && isValidId(contaId);
+      }
+
+      // Subcollection for Dividas
+      match /dividas/{dividaId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(dividaId) && isValidDivida(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(dividaId) && isValidDivida(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(dividaId);
       }
 
       // Subcollection for Companies/PJ

@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
+import { useUndo } from './contexts/UndoContext';
 import { 
   Plus, 
   Minus, 
@@ -53,7 +54,8 @@ import {
   ChevronUp,
   Download,
   Receipt,
-  RotateCcw
+  RotateCcw,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -78,6 +80,7 @@ import Metas from './components/Metas';
 import Cofre, { Vault } from './components/Cofre';
 import Recorrentes, { Recorrente } from './components/Recorrentes';
 import Contas, { Conta } from './components/Contas';
+import Dividas, { Divida } from './components/Dividas';
 import Orcamentos from './components/Orcamentos';
 import Investimentos from './components/Investimentos';
 import Transacoes from './components/Transacoes';
@@ -121,7 +124,7 @@ export default function App() {
 
   // Auto-expand "Pessoal" master tab when a child tab is active
   useEffect(() => {
-    const personalTabs = ['transactions', 'budgets', 'contas', 'recurrentes', 'cofre', 'goals', 'investments', 'calendar', 'categories'];
+    const personalTabs = ['transactions', 'budgets', 'contas', 'dividas', 'recurrentes', 'cofre', 'goals', 'investments', 'calendar', 'categories'];
     if (personalTabs.includes(activeTab)) {
       setIsPessoalOpen(true);
     }
@@ -174,6 +177,10 @@ export default function App() {
     { id: '3', name: 'Conta de Água', value: 85.20, dueDate: '2026-06-05', category: 'servicos', status: 'pendente', bank: 'Inter' }
   ]);
 
+  const [dividas, setDividas] = useState<Divida[]>([
+    { id: '1', creditor: 'Cartão de Crédito Amex', amount: 450.00, dueDate: '2026-06-15', description: 'Compras parceladas', status: 'pendente' }
+  ]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newEntry, setNewEntry] = useState({
     type: 'saida',
@@ -212,186 +219,154 @@ export default function App() {
   const [customCategories, setCustomCategories] = useState<any[]>([]);
 
   // 8 Seconds Undo Toast State
-  interface UndoToast {
-    id: string;
-    message: string;
-    type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category';
-    item: any;
-    extraData?: any;
-  }
-  const [activeUndoToast, setActiveUndoToast] = useState<UndoToast | null>(null);
-  const [toastProgress, setToastProgress] = useState(100);
+  const { addUndoAction } = useUndo();
 
   const triggerUndoToast = (
     message: string, 
-    type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'investment' | 'budget' | 'category', 
+    type: 'transaction' | 'meta' | 'cofre' | 'recorrente' | 'conta' | 'divida' | 'investment' | 'budget' | 'category', 
     item: any, 
     extraData?: any
   ) => {
-    setActiveUndoToast({
-      id: String(Date.now()),
-      message,
-      type,
-      item,
-      extraData
-    });
-    setToastProgress(100);
-  };
+    const undo = async () => {
+      try {
+        if (type === 'transaction') {
+          if (user) {
+            const path = `users/${user.uid}/transactions`;
+            await setDoc(doc(db, path, item.id), item);
+            
+            // Restore vault balance
+            if (item.vaultId) {
+              const vault = vaults.find(v => v.id === item.vaultId);
+              if (vault) {
+                const amount = Number(item.value) || 0;
+                const logContrib = item.type === 'entrada' ? -amount : amount;
+                await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), {
+                  ...vault,
+                  currentValue: Math.max(0, vault.currentValue + logContrib)
+                });
+              }
+            }
 
-  useEffect(() => {
-    if (!activeUndoToast) return;
+            // Restore linked bill (Conta) if any was deleted
+            if (extraData?.linkedConta) {
+              const contaPath = `users/${user.uid}/contas`;
+              await setDoc(doc(db, contaPath, extraData.linkedConta.id), extraData.linkedConta);
+            }
+          } else {
+            setTransactions(prev => [item, ...prev]);
+            
+            if (item.vaultId) {
+              const vault = vaults.find(v => v.id === item.vaultId);
+              if (vault) {
+                const amount = Number(item.value) || 0;
+                const logContrib = item.type === 'entrada' ? -amount : amount;
+                setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + logContrib) } : v));
+              }
+            }
 
-    setToastProgress(100);
-    const totalDuration = 8000; // 8 seconds
-    const intervalTime = 50; // update scale / bar every 50ms
-    const decrement = (intervalTime / totalDuration) * 100;
-
-    const interval = setInterval(() => {
-      setToastProgress((prev) => {
-        if (prev <= decrement) {
-          clearInterval(interval);
-          setActiveUndoToast(null);
-          return 0;
-        }
-        return prev - decrement;
-      });
-    }, intervalTime);
-
-    return () => clearInterval(interval);
-  }, [activeUndoToast]);
-
-  const handleUndoDelete = async () => {
-    if (!activeUndoToast) return;
-    const { type, item, extraData } = activeUndoToast;
-
-    try {
-      if (type === 'transaction') {
-        if (user) {
-          const path = `users/${user.uid}/transactions`;
-          await setDoc(doc(db, path, item.id), item);
-          
-          // Restore vault balance
-          if (item.vaultId) {
-            const vault = vaults.find(v => v.id === item.vaultId);
-            if (vault) {
-              const amount = Number(item.value) || 0;
-              const logContrib = item.type === 'entrada' ? -amount : amount;
-              await setDoc(doc(db, `users/${user.uid}/vaults`, vault.id), {
-                ...vault,
-                currentValue: Math.max(0, vault.currentValue + logContrib)
-              });
+            if (extraData?.linkedConta) {
+              setContas(prev => [extraData.linkedConta, ...prev]);
             }
           }
-
-          // Restore linked bill (Conta) if any was deleted
-          if (extraData?.linkedConta) {
-            const contaPath = `users/${user.uid}/contas`;
-            await setDoc(doc(db, contaPath, extraData.linkedConta.id), extraData.linkedConta);
-          }
-        } else {
-          setTransactions(prev => [item, ...prev]);
-          
-          if (item.vaultId) {
-            const vault = vaults.find(v => v.id === item.vaultId);
-            if (vault) {
-              const amount = Number(item.value) || 0;
-              const logContrib = item.type === 'entrada' ? -amount : amount;
-              setVaults(prev => prev.map(v => v.id === vault.id ? { ...v, currentValue: Math.max(0, v.currentValue + logContrib) } : v));
+        } else if (type === 'conta') {
+          if (user) {
+            const path = `users/${user.uid}/contas`;
+            await setDoc(doc(db, path, item.id), item);
+            
+            if (extraData?.linkedTx) {
+              await setDoc(doc(db, `users/${user.uid}/transactions`, extraData.linkedTx.id), extraData.linkedTx);
+            }
+          } else {
+            setContas(prev => [item, ...prev]);
+            if (extraData?.linkedTx) {
+              setTransactions(prev => [extraData.linkedTx, ...prev]);
             }
           }
-
-          if (extraData?.linkedConta) {
-            setContas(prev => [extraData.linkedConta, ...prev]);
+        } else if (type === 'divida') {
+          if (user) {
+            const path = `users/${user.uid}/dividas`;
+            await setDoc(doc(db, path, item.id), item);
+          } else {
+            setDividas(prev => [item, ...prev]);
           }
-        }
-      } else if (type === 'conta') {
-        if (user) {
-          const path = `users/${user.uid}/contas`;
-          await setDoc(doc(db, path, item.id), item);
-          
-          if (extraData?.linkedTx) {
-            await setDoc(doc(db, `users/${user.uid}/transactions`, extraData.linkedTx.id), extraData.linkedTx);
+        } else if (type === 'recorrente') {
+          if (user) {
+            const path = `users/${user.uid}/recurrentes`;
+            await setDoc(doc(db, path, item.id), item);
+          } else {
+            setRecurrentes(prev => [item, ...prev]);
           }
-        } else {
-          setContas(prev => [item, ...prev]);
-          if (extraData?.linkedTx) {
-            setTransactions(prev => [extraData.linkedTx, ...prev]);
+        } else if (type === 'meta') {
+          if (user) {
+            const path = `users/${user.uid}/goals`;
+            await setDoc(doc(db, path, item.id), item);
+          } else {
+            setGoals(prev => [item, ...prev]);
           }
-        }
-      } else if (type === 'recorrente') {
-        if (user) {
-          const path = `users/${user.uid}/recurrentes`;
-          await setDoc(doc(db, path, item.id), item);
-        } else {
-          setRecurrentes(prev => [item, ...prev]);
-        }
-      } else if (type === 'meta') {
-        if (user) {
-          const path = `users/${user.uid}/goals`;
-          await setDoc(doc(db, path, item.id), item);
-        } else {
-          setGoals(prev => [item, ...prev]);
-        }
-      } else if (type === 'cofre') {
-        if (user) {
-          const path = `users/${user.uid}/vaults`;
-          await setDoc(doc(db, path, item.id), item);
-          
-          if (extraData?.linkedTxs) {
-            const txPath = `users/${user.uid}/transactions`;
-            for (const tx of extraData.linkedTxs) {
-              await setDoc(doc(db, txPath, tx.id), tx);
+        } else if (type === 'cofre') {
+          if (user) {
+            const path = `users/${user.uid}/vaults`;
+            await setDoc(doc(db, path, item.id), item);
+            
+            if (extraData?.linkedTxs) {
+              const txPath = `users/${user.uid}/transactions`;
+              for (const tx of extraData.linkedTxs) {
+                await setDoc(doc(db, txPath, tx.id), tx);
+              }
+            }
+          } else {
+            setVaults(prev => [item, ...prev]);
+            if (extraData?.linkedTxs) {
+              setTransactions(prev => [...extraData.linkedTxs, ...prev]);
             }
           }
-        } else {
-          setVaults(prev => [item, ...prev]);
-          if (extraData?.linkedTxs) {
-            setTransactions(prev => [...extraData.linkedTxs, ...prev]);
+        } else if (type === 'investment') {
+          if (user) {
+            const path = `users/${user.uid}/investments`;
+            await setDoc(doc(db, path, item.id), item);
+          } else {
+            setInvestments(prev => [item, ...prev]);
           }
-        }
-      } else if (type === 'investment') {
-        if (user) {
-          const path = `users/${user.uid}/investments`;
-          await setDoc(doc(db, path, item.id), item);
-        } else {
-          setInvestments(prev => [item, ...prev]);
-        }
-      } else if (type === 'budget') {
-        if (user) {
-          const path = `users/${user.uid}/budgets`;
-          await setDoc(doc(db, path, item.categoryId), {
-            categoryId: item.categoryId,
-            limit: item.limit,
-            userId: user.uid
-          });
-        } else {
-          setBudgets(prev => ({ ...prev, [item.categoryId]: item.limit }));
-        }
-      } else if (type === 'category') {
-        if (user) {
-          const categoryPath = `users/${user.uid}/categories/${item.id}`;
-          await setDoc(doc(db, categoryPath), item);
-          
-          if (extraData?.budget) {
-            const budgetPath = `users/${user.uid}/budgets/${item.id}`;
-            await setDoc(doc(db, budgetPath), {
-              categoryId: item.id,
-              limit: extraData.budget,
+        } else if (type === 'budget') {
+          if (user) {
+            const path = `users/${user.uid}/budgets`;
+            await setDoc(doc(db, path, item.categoryId), {
+              categoryId: item.categoryId,
+              limit: item.limit,
               userId: user.uid
             });
+          } else {
+            setBudgets(prev => ({ ...prev, [item.categoryId]: item.limit }));
           }
-        } else {
-          setCustomCategories(prev => [item, ...prev]);
-          if (extraData?.budget !== undefined) {
-            setBudgets(prev => ({ ...prev, [item.id]: extraData.budget }));
+        } else if (type === 'category') {
+          if (user) {
+            const categoryPath = `users/${user.uid}/categories/${item.id}`;
+            await setDoc(doc(db, categoryPath), item);
+            
+            if (extraData?.budget) {
+              const budgetPath = `users/${user.uid}/budgets/${item.id}`;
+              await setDoc(doc(db, budgetPath), {
+                categoryId: item.id,
+                limit: extraData.budget,
+                userId: user.uid
+              });
+            }
+          } else {
+            setCustomCategories(prev => [item, ...prev]);
+            if (extraData?.budget !== undefined) {
+              setBudgets(prev => ({ ...prev, [item.id]: extraData.budget }));
+            }
           }
         }
+      } catch (error) {
+        console.error("Erro ao desfazer ação:", error);
       }
-      
-      setActiveUndoToast(null);
-    } catch (error) {
-      console.error("Erro ao desfazer exclusão:", error);
-    }
+    };
+
+    addUndoAction({
+      description: message,
+      action: undo
+    });
   };
 
   // States, useMemo filters, and clearAllFilters moved to Transacoes.tsx
@@ -560,6 +535,19 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, contasPath);
     });
 
+    // Live sync dividas
+    const dividasPath = `users/${user.uid}/dividas`;
+    const unsubDividas = onSnapshot(collection(db, dividasPath), (snapshot) => {
+      const dvs: Divida[] = [];
+      snapshot.forEach((d) => {
+        dvs.push(d.data() as Divida);
+      });
+      dvs.sort((a, b) => b.id.localeCompare(a.id));
+      setDividas(dvs);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, dividasPath);
+    });
+
     // H. Live sync custom categories
     const categoriesPath = `users/${user.uid}/categories`;
     const unsubCategories = onSnapshot(collection(db, categoriesPath), (snapshot) => {
@@ -580,6 +568,7 @@ export default function App() {
       unsubVaults();
       unsubRecurrentes();
       unsubContas();
+      unsubDividas();
       unsubCategories();
     };
   }, [user]);
@@ -920,11 +909,23 @@ export default function App() {
       const path = `users/${user.uid}/transactions`;
       try {
         await setDoc(doc(db, path, transactionId), transaction);
+        addUndoAction({
+          description: `Lançamento adicionado: ${transaction.description}`,
+          action: async () => {
+            await deleteDoc(doc(db, path, transactionId));
+          }
+        });
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, `${path}/${transactionId}`);
       }
     } else {
       setTransactions([transaction, ...transactions]);
+      addUndoAction({
+        description: `Lançamento adicionado: ${transaction.description}`,
+        action: async () => {
+          setTransactions(prev => prev.filter(t => t.id !== transactionId));
+        }
+      });
     }
 
     setIsModalOpen(false);
@@ -1272,6 +1273,14 @@ export default function App() {
         }));
       }
     }
+    
+    addUndoAction({
+      description: `Edição desfeita: ${finalTransaction.description}`,
+      action: async () => {
+        await handleUpdateTransaction(oldTransaction);
+      }
+    });
+
     setEditingTransaction(null);
     setSelectedTransaction(null);
   };
@@ -1303,6 +1312,14 @@ export default function App() {
         setContas(prev => prev.map(c => c.id === contaId ? updatedConta : c));
       }
     }
+    
+    addUndoAction({
+      description: `Status de "${transaction.description}" alterado`,
+      action: async () => {
+        await handleQuickStatusChange(updated, transaction.status);
+      }
+    });
+
     setStatusMenuTx(null);
     setStatusMenuAnchor(null);
   };
@@ -1382,6 +1399,13 @@ export default function App() {
         }
       }
     }
+    
+    addUndoAction({
+      description: `Alteração no lançamento: ${transaction.description}`,
+      action: async () => {
+        await handleQuickFieldUpdate(updated, field, transaction[field]);
+      }
+    });
   };
 
   const handleAddBudget = async (e: React.FormEvent) => {
@@ -1554,9 +1578,11 @@ export default function App() {
       goals,
       vaults,
       recurrentes,
+      contas,
+      dividas,
       customCategories,
       exportDate: new Date().toISOString(),
-      appName: 'Finanças App'
+      appName: 'Fortuna'
     };
     
     try {
@@ -1853,7 +1879,7 @@ export default function App() {
             <button
               onClick={() => setIsPessoalOpen(!isPessoalOpen)}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer ${
-                ['transactions', 'budgets', 'contas', 'recurrentes', 'cofre', 'goals', 'investments', 'calendar', 'categories'].includes(activeTab)
+                ['transactions', 'budgets', 'contas', 'dividas', 'recurrentes', 'cofre', 'goals', 'investments', 'calendar', 'categories'].includes(activeTab)
                   ? 'text-emerald-600 dark:text-emerald-500 font-bold bg-emerald-50/20 dark:bg-emerald-950/10'
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
@@ -1883,6 +1909,7 @@ export default function App() {
                   <SidebarItem icon={List} label="Transações" id="transactions" isSubItem />
                   <SidebarItem icon={Target} label="Orçamentos" id="budgets" isSubItem />
                   <SidebarItem icon={Receipt} label="Contas a Pagar" id="contas" isSubItem />
+                  <SidebarItem icon={Users} label="Dívidas" id="dividas" isSubItem />
                   <SidebarItem icon={Repeat} label="Recorrentes" id="recurrentes" isSubItem />
                   <SidebarItem icon={Lock} label="Cofre" id="cofre" isSubItem />
                   <SidebarItem icon={Trophy} label="Metas" id="goals" isSubItem />
@@ -2555,6 +2582,16 @@ export default function App() {
               user={user} 
               theme={theme}
               onQuickPay={handleQuickPayConta}
+              triggerUndoToast={triggerUndoToast}
+            />
+          )}
+
+          {activeTab === 'dividas' && (
+            <Dividas 
+              dividas={dividas} 
+              setDividas={setDividas} 
+              user={user} 
+              theme={theme}
               triggerUndoToast={triggerUndoToast}
             />
           )}
@@ -3772,6 +3809,24 @@ export default function App() {
 
                 <button
                   onClick={() => {
+                    setActiveTab('dividas');
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 rounded-xl transition-all ${
+                    activeTab === 'dividas' 
+                      ? 'text-emerald-600 dark:text-emerald-500 font-bold' 
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-950/20 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Users size={18} className="text-pink-500" />
+                    <span className="text-sm">Dívidas</span>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => {
                     setActiveTab('recurrentes');
                     setIsMobileMenuOpen(false);
                   }}
@@ -4487,57 +4542,6 @@ export default function App() {
               </div>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
-
-      {/* Toast de Notificação com Reverter */}
-      <AnimatePresence>
-        {activeUndoToast && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-            className="fixed bottom-6 right-6 z-[9999] w-full max-w-sm sm:max-w-md p-4 bg-slate-900 border border-slate-800 text-slate-100 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.4)] flex flex-col overflow-hidden"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-slate-800 text-rose-400 flex items-center justify-center shrink-0 border border-slate-700 font-bold">
-                  🗑️
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-slate-400 font-medium">Excluído com sucesso</p>
-                  <p className="text-sm font-bold truncate text-slate-200">
-                    {activeUndoToast.message}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={handleUndoDelete}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-95 text-emerald-400 text-xs font-black rounded-lg transition-all duration-150 cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Desfazer</span>
-                </button>
-                <button
-                  onClick={() => setActiveUndoToast(null)}
-                  className="p-1 px-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Countdown Progress Bar */}
-            <div className="relative mt-3 h-1 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div 
-                className="absolute top-0 bottom-0 left-0 bg-emerald-500 rounded-full transition-all duration-100" 
-                style={{ width: `${toastProgress}%` }}
-              />
-            </div>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>
