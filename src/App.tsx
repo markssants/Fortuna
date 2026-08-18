@@ -65,6 +65,8 @@ import {
   Receipt,
   RotateCcw,
   Users,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -153,6 +155,21 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isPessoalOpen, setIsPessoalOpen] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("fortuna_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("fortuna_sidebar_collapsed", String(isSidebarCollapsed));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [isSidebarCollapsed]);
 
   // Auto-expand "Pessoal" master tab when a child tab is active
   useEffect(() => {
@@ -2716,28 +2733,51 @@ export default function App() {
   const SidebarItem = ({
     icon: Icon,
     label,
-    id,
+    id: itemId,
     isSubItem = false,
   }: {
     icon: any;
     label: string;
     id: string;
     isSubItem?: boolean;
-  }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`w-full flex items-center gap-3 rounded-xl transition-all ${
-        isSubItem ? "px-3.5 py-2 text-sm" : "px-4 py-3"
-      } ${
-        activeTab === id
-          ? "bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20"
-          : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-      }`}
-    >
-      <Icon size={isSubItem ? 16 : 20} className="shrink-0" />
-      <span className="font-medium truncate">{label}</span>
-    </button>
-  );
+  }) => {
+    const isActive = activeTab === itemId;
+    return (
+      <div className="relative group w-full">
+        <button
+          onClick={() => setActiveTab(itemId)}
+          title={isSidebarCollapsed ? label : undefined}
+          className={`w-full flex items-center rounded-xl transition-all cursor-pointer ${
+            isSidebarCollapsed
+              ? "justify-center px-0 py-3"
+              : isSubItem
+                ? "px-3.5 py-2 text-sm gap-3"
+                : "px-4 py-3 gap-3"
+          } ${
+            isActive
+              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20"
+              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"
+          }`}
+          id={`sidebar-item-${itemId}`}
+        >
+          <Icon
+            size={isSidebarCollapsed ? 20 : isSubItem ? 16 : 20}
+            className="shrink-0 transition-transform group-hover:scale-110"
+          />
+          {!isSidebarCollapsed && (
+            <span className="font-medium truncate">{label}</span>
+          )}
+        </button>
+
+        {/* Floating tooltip for collapsed mode */}
+        {isSidebarCollapsed && (
+          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1.5 bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+            {label}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (authLoading) {
     return (
@@ -3046,19 +3086,52 @@ export default function App() {
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
       {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-6 hidden md:flex flex-col h-screen sticky top-0 overflow-y-auto shrink-0">
-        <div className="flex items-center justify-center mb-10 mt-6 px-2 w-full">
-          <div className="relative shrink-0">
-            <img
-              src="/Logotipo Fortuna.png"
-              alt="Fortuna Logo"
-              className="h-16 w-auto object-contain"
-            />
-            <span className="absolute -top-0.5 -right-5 text-[8.5px] text-slate-400 dark:text-slate-500 font-mono tracking-tighter select-none font-bold">
-              V1.2
-            </span>
+      <aside
+        className={`${
+          isSidebarCollapsed ? "w-20 px-3 py-6" : "w-64 p-6"
+        } bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 hidden md:flex flex-col h-screen sticky top-0 overflow-y-auto overflow-x-hidden shrink-0 transition-all duration-300 z-30`}
+      >
+        {/* Top Header / Logo + Minimize button */}
+        {isSidebarCollapsed ? (
+          <div className="flex flex-col items-center mb-6 mt-1 w-full gap-3 shrink-0">
+            <div className="relative shrink-0 flex items-center justify-center">
+              <img
+                src="/Iso F ortuna.png"
+                alt="Fortuna"
+                className="h-10 w-10 object-contain rounded-xl"
+              />
+            </div>
+            <button
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              title="Expandir menu"
+              id="expand-sidebar-btn"
+            >
+              <PanelLeftOpen size={18} />
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between mb-8 mt-2 px-1 w-full shrink-0">
+            <div className="relative shrink-0 flex items-center gap-2">
+              <img
+                src="/Logotipo Fortuna.png"
+                alt="Fortuna Logo"
+                className="h-12 w-auto object-contain"
+              />
+              <span className="text-[8.5px] text-slate-400 dark:text-slate-500 font-mono tracking-tighter select-none font-bold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                V1.2
+              </span>
+            </div>
+            <button
+              onClick={() => setIsSidebarCollapsed(true)}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+              title="Minimizar menu (mostrar apenas ícones)"
+              id="collapse-sidebar-btn"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          </div>
+        )}
 
         <nav className="flex-1 space-y-2 select-none">
           <SidebarItem
@@ -3067,149 +3140,212 @@ export default function App() {
             id="dashboard"
           />
 
-          {/* Aba Mestre "Pessoal" */}
-          <div className="space-y-1">
-            <button
-              onClick={() => setIsPessoalOpen(!isPessoalOpen)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer ${
-                [
-                  "transactions",
-                  "budgets",
-                  "contas",
-                  "dividas",
-                  "recurrentes",
-                  "cofre",
-                  "goals",
-                  "investments",
-                  "calendar",
-                  "categories",
-                ].includes(activeTab)
-                  ? "text-emerald-600 dark:text-emerald-500 font-bold bg-emerald-50/20 dark:bg-emerald-950/10"
-                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <User size={20} className="shrink-0" />
-                <span className="font-medium">Pessoal</span>
-              </div>
-              <motion.div
-                animate={{ rotate: isPessoalOpen ? 180 : 0 }}
-                transition={{ duration: 0.2 }}
-                className="text-slate-400 shrink-0"
-              >
-                <ChevronDown size={16} />
-              </motion.div>
-            </button>
-
-            <AnimatePresence initial={false}>
-              {isPessoalOpen && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.25, ease: "easeInOut" }}
-                  className="overflow-hidden ml-4 pl-2 border-l border-slate-100 dark:border-slate-800/80 space-y-1"
-                >
-                  <SidebarItem
-                    icon={List}
-                    label="Transações"
-                    id="transactions"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={Target}
-                    label="Orçamentos"
-                    id="budgets"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={Receipt}
-                    label="Contas a Pagar"
-                    id="contas"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={Users}
-                    label="Dívidas"
-                    id="dividas"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={Repeat}
-                    label="Recorrentes"
-                    id="recurrentes"
-                    isSubItem
-                  />
-                  <SidebarItem icon={Lock} label="Cofre" id="cofre" isSubItem />
-                  <SidebarItem
-                    icon={Trophy}
-                    label="Metas"
-                    id="goals"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={TrendingUp}
-                    label="Investimentos"
-                    id="investments"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={Calendar}
-                    label="Calendário"
-                    id="calendar"
-                    isSubItem
-                  />
-                  <SidebarItem
-                    icon={Tag}
-                    label="Categorias"
-                    id="categories"
-                    isSubItem
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <SidebarItem
-            icon={Building2}
-            label="Minhas Empresas (PJ)"
-            id="empresas"
-          />
-        </nav>
-
-        <div className="mt-8 space-y-4">
-          {/* Saldo Card */}
-          <div
-            className={`p-4 rounded-3xl transition-all duration-300 relative ${
-              balanceType === "total"
-                ? "bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40"
-                : balanceType === "recebido"
-                  ? "bg-teal-50/70 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40"
-                  : balanceType === "futuro"
-                    ? "bg-sky-50/70 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40"
-                    : balanceType === "pendente"
-                      ? "bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40"
-                      : "bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40"
-            }`}
-          >
-            <div
-              onClick={() => setIsBalanceCardExpanded(!isBalanceCardExpanded)}
-              className="cursor-pointer select-none"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span
-                  className={`text-[10px] font-extrabold uppercase tracking-[0.1em] ${
-                    balanceType === "total"
-                      ? "text-emerald-700 dark:text-emerald-400"
-                      : balanceType === "recebido"
-                        ? "text-teal-700 dark:text-teal-400"
-                        : balanceType === "futuro"
-                          ? "text-sky-750 dark:text-sky-400"
-                          : balanceType === "pendente"
-                            ? "text-amber-700 dark:text-amber-400"
-                            : "text-rose-700 dark:text-rose-400"
+          {isSidebarCollapsed ? (
+            <>
+              <div className="my-2 border-t border-slate-100 dark:border-slate-800 w-full" />
+              <SidebarItem
+                icon={List}
+                label="Transações"
+                id="transactions"
+              />
+              <SidebarItem
+                icon={Target}
+                label="Orçamentos"
+                id="budgets"
+              />
+              <SidebarItem
+                icon={Receipt}
+                label="Contas a Pagar"
+                id="contas"
+              />
+              <SidebarItem
+                icon={Users}
+                label="Dívidas"
+                id="dividas"
+              />
+              <SidebarItem
+                icon={Repeat}
+                label="Recorrentes"
+                id="recurrentes"
+              />
+              <SidebarItem icon={Lock} label="Cofre" id="cofre" />
+              <SidebarItem
+                icon={Trophy}
+                label="Metas"
+                id="goals"
+              />
+              <SidebarItem
+                icon={TrendingUp}
+                label="Investimentos"
+                id="investments"
+              />
+              <SidebarItem
+                icon={Calendar}
+                label="Calendário"
+                id="calendar"
+              />
+              <SidebarItem
+                icon={Tag}
+                label="Categorias"
+                id="categories"
+              />
+              <div className="my-2 border-t border-slate-100 dark:border-slate-800 w-full" />
+              <SidebarItem
+                icon={Building2}
+                label="Minhas Empresas (PJ)"
+                id="empresas"
+              />
+            </>
+          ) : (
+            <>
+              {/* Aba Mestre "Pessoal" */}
+              <div className="space-y-1">
+                <button
+                  onClick={() => setIsPessoalOpen(!isPessoalOpen)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                    [
+                      "transactions",
+                      "budgets",
+                      "contas",
+                      "dividas",
+                      "recurrentes",
+                      "cofre",
+                      "goals",
+                      "investments",
+                      "calendar",
+                      "categories",
+                    ].includes(activeTab)
+                      ? "text-emerald-600 dark:text-emerald-500 font-bold bg-emerald-50/20 dark:bg-emerald-950/10"
+                      : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                   }`}
                 >
+                  <div className="flex items-center gap-3">
+                    <User size={20} className="shrink-0" />
+                    <span className="font-medium">Pessoal</span>
+                  </div>
+                  <motion.div
+                    animate={{ rotate: isPessoalOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="text-slate-400 shrink-0"
+                  >
+                    <ChevronDown size={16} />
+                  </motion.div>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {isPessoalOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                      className="overflow-hidden ml-4 pl-2 border-l border-slate-100 dark:border-slate-800/80 space-y-1"
+                    >
+                      <SidebarItem
+                        icon={List}
+                        label="Transações"
+                        id="transactions"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={Target}
+                        label="Orçamentos"
+                        id="budgets"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={Receipt}
+                        label="Contas a Pagar"
+                        id="contas"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={Users}
+                        label="Dívidas"
+                        id="dividas"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={Repeat}
+                        label="Recorrentes"
+                        id="recurrentes"
+                        isSubItem
+                      />
+                      <SidebarItem icon={Lock} label="Cofre" id="cofre" isSubItem />
+                      <SidebarItem
+                        icon={Trophy}
+                        label="Metas"
+                        id="goals"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={TrendingUp}
+                        label="Investimentos"
+                        id="investments"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={Calendar}
+                        label="Calendário"
+                        id="calendar"
+                        isSubItem
+                      />
+                      <SidebarItem
+                        icon={Tag}
+                        label="Categorias"
+                        id="categories"
+                        isSubItem
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              <SidebarItem
+                icon={Building2}
+                label="Minhas Empresas (PJ)"
+                id="empresas"
+              />
+            </>
+          )}
+        </nav>
+
+        <div className={`mt-8 space-y-4 ${isSidebarCollapsed ? "flex flex-col items-center" : ""}`}>
+          {/* Saldo Card */}
+          {isSidebarCollapsed ? (
+            <div className="relative group flex justify-center w-full">
+              <button
+                onClick={() => {
+                  setBalanceType((prev) => {
+                    const order: Array<"total" | "recebido" | "futuro" | "pendente" | "gasto"> = [
+                      "total",
+                      "recebido",
+                      "futuro",
+                      "pendente",
+                      "gasto",
+                    ];
+                    const nextIndex = (order.indexOf(prev) + 1) % order.length;
+                    return order[nextIndex];
+                  });
+                }}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer ${
+                  balanceType === "total"
+                    ? "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400"
+                    : balanceType === "recebido"
+                      ? "bg-teal-50/80 dark:bg-teal-950/30 border-teal-200 dark:border-teal-900/50 text-teal-600 dark:text-teal-400"
+                      : balanceType === "futuro"
+                        ? "bg-sky-50/80 dark:bg-sky-950/30 border-sky-200 dark:border-sky-900/50 text-sky-600 dark:text-sky-400"
+                        : balanceType === "pendente"
+                          ? "bg-amber-50/80 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400"
+                          : "bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400"
+                }`}
+                id="collapsed-balance-btn"
+              >
+                <Wallet size={20} />
+              </button>
+              {/* Tooltip on hover */}
+              <div className="absolute left-full ml-3 bottom-0 px-3 py-2 bg-slate-900 dark:bg-slate-800 text-white rounded-xl shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">
                   {balanceType === "total"
                     ? "💵 Saldo Total"
                     : balanceType === "recebido"
@@ -3219,184 +3355,292 @@ export default function App() {
                         : balanceType === "pendente"
                           ? "⏳ Saldo Pendente"
                           : "💸 Total Gasto"}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsBalanceCardExpanded(!isBalanceCardExpanded);
-                  }}
-                  className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors cursor-pointer text-slate-500 dark:text-slate-400 font-bold"
-                  title={
-                    isBalanceCardExpanded
-                      ? "Recolher Saldos"
-                      : "Expandir Saldos"
-                  }
-                >
-                  {isBalanceCardExpanded ? (
-                    <ChevronDown size={14} />
-                  ) : (
-                    <ChevronUp size={14} />
-                  )}
-                </button>
-              </div>
-              <p
-                className={`text-xl font-black tracking-tight leading-none mb-1 transition-colors duration-300 ${
-                  balanceType === "total"
-                    ? "text-emerald-900 dark:text-emerald-50"
+                </p>
+                <p className="text-sm font-black text-emerald-400">
+                  R${" "}
+                  {(balanceType === "total"
+                    ? stats.balance
                     : balanceType === "recebido"
-                      ? "text-teal-900 dark:text-teal-50"
+                      ? stats.balanceRecebido
                       : balanceType === "futuro"
-                        ? "text-sky-900 dark:text-sky-50"
+                        ? stats.balanceFuturo
                         : balanceType === "pendente"
-                          ? "text-amber-900 dark:text-amber-50"
-                          : "text-rose-900 dark:text-rose-50"
-                }`}
-              >
-                R${" "}
-                {(balanceType === "total"
-                  ? stats.balance
-                  : balanceType === "recebido"
-                    ? stats.balanceRecebido
-                    : balanceType === "futuro"
-                      ? stats.balanceFuturo
-                      : balanceType === "pendente"
-                        ? stats.balancePendente
-                        : stats.totalOut
-                ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-              </p>
+                          ? stats.balancePendente
+                          : stats.totalOut
+                  ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-[9px] text-slate-400 mt-0.5">Clique para alternar saldo</p>
+              </div>
             </div>
-
-            <AnimatePresence initial={false}>
-              {isBalanceCardExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                  animate={{ height: "auto", opacity: 1, marginTop: 12 }}
-                  exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                  className="overflow-hidden"
+          ) : (
+            <div
+              className={`p-4 rounded-3xl transition-all duration-300 relative ${
+                balanceType === "total"
+                  ? "bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40"
+                  : balanceType === "recebido"
+                    ? "bg-teal-50/70 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/40"
+                    : balanceType === "futuro"
+                      ? "bg-sky-50/70 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40"
+                      : balanceType === "pendente"
+                        ? "bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/40"
+                        : "bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40"
+              }`}
+            >
+              <div
+                onClick={() => setIsBalanceCardExpanded(!isBalanceCardExpanded)}
+                className="cursor-pointer select-none"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className={`text-[10px] font-extrabold uppercase tracking-[0.1em] ${
+                      balanceType === "total"
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : balanceType === "recebido"
+                          ? "text-teal-700 dark:text-teal-400"
+                          : balanceType === "futuro"
+                            ? "text-sky-750 dark:text-sky-400"
+                            : balanceType === "pendente"
+                              ? "text-amber-700 dark:text-amber-400"
+                              : "text-rose-700 dark:text-rose-400"
+                    }`}
+                  >
+                    {balanceType === "total"
+                      ? "💵 Saldo Total"
+                      : balanceType === "recebido"
+                        ? "✅ Em conta"
+                        : balanceType === "futuro"
+                          ? "🔮 Saldo Futuro"
+                          : balanceType === "pendente"
+                            ? "⏳ Saldo Pendente"
+                            : "💸 Total Gasto"}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsBalanceCardExpanded(!isBalanceCardExpanded);
+                    }}
+                    className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors cursor-pointer text-slate-500 dark:text-slate-400 font-bold"
+                    title={
+                      isBalanceCardExpanded
+                        ? "Recolher Saldos"
+                        : "Expandir Saldos"
+                    }
+                  >
+                    {isBalanceCardExpanded ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronUp size={14} />
+                    )}
+                  </button>
+                </div>
+                <p
+                  className={`text-xl font-black tracking-tight leading-none mb-1 transition-colors duration-300 ${
+                    balanceType === "total"
+                      ? "text-emerald-900 dark:text-emerald-50"
+                      : balanceType === "recebido"
+                        ? "text-teal-900 dark:text-teal-50"
+                        : balanceType === "futuro"
+                          ? "text-sky-900 dark:text-sky-50"
+                          : balanceType === "pendente"
+                            ? "text-amber-900 dark:text-amber-50"
+                            : "text-rose-900 dark:text-rose-50"
+                  }`}
                 >
-                  <div className="pt-3 border-t border-slate-900/5 dark:border-white/5 space-y-1 text-[10px]">
-                    <button
-                      onClick={() => setBalanceType("total")}
-                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
-                        balanceType === "total"
-                          ? "bg-emerald-500/10 dark:bg-emerald-500/20 font-bold text-emerald-800 dark:text-emerald-300"
-                          : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      <span>Total:</span>
-                      <span>
-                        R${" "}
-                        {stats.balance.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setBalanceType("recebido")}
-                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
-                        balanceType === "recebido"
-                          ? "bg-teal-500/10 dark:bg-teal-500/20 font-bold text-teal-800 dark:text-teal-300"
-                          : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      <span>Em conta:</span>
-                      <span>
-                        R${" "}
-                        {stats.balanceRecebido.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setBalanceType("futuro")}
-                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
-                        balanceType === "futuro"
-                          ? "bg-sky-500/10 dark:bg-sky-500/20 font-bold text-sky-800 dark:text-sky-300"
-                          : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      <span>Futuro:</span>
-                      <span>
-                        R${" "}
-                        {stats.balanceFuturo.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setBalanceType("pendente")}
-                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
-                        balanceType === "pendente"
-                          ? "bg-amber-500/10 dark:bg-amber-500/20 font-bold text-amber-800 dark:text-amber-300"
-                          : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      <span>Pendente:</span>
-                      <span>
-                        R${" "}
-                        {stats.balancePendente.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => setBalanceType("gasto")}
-                      className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
-                        balanceType === "gasto"
-                          ? "bg-rose-500/10 dark:bg-rose-500/20 font-bold text-rose-800 dark:text-rose-300"
-                          : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
-                      }`}
-                    >
-                      <span>Total gasto:</span>
-                      <span>
-                        R${" "}
-                        {stats.totalOut.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </span>
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                  R${" "}
+                  {(balanceType === "total"
+                    ? stats.balance
+                    : balanceType === "recebido"
+                      ? stats.balanceRecebido
+                      : balanceType === "futuro"
+                        ? stats.balanceFuturo
+                        : balanceType === "pendente"
+                          ? stats.balancePendente
+                          : stats.totalOut
+                  ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {isBalanceCardExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                    animate={{ height: "auto", opacity: 1, marginTop: 12 }}
+                    exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-3 border-t border-slate-900/5 dark:border-white/5 space-y-1 text-[10px]">
+                      <button
+                        onClick={() => setBalanceType("total")}
+                        className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                          balanceType === "total"
+                            ? "bg-emerald-500/10 dark:bg-emerald-500/20 font-bold text-emerald-800 dark:text-emerald-300"
+                            : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
+                        <span>Total:</span>
+                        <span>
+                          R${" "}
+                          {stats.balance.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setBalanceType("recebido")}
+                        className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                          balanceType === "recebido"
+                            ? "bg-teal-500/10 dark:bg-teal-500/20 font-bold text-teal-800 dark:text-teal-300"
+                            : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
+                        <span>Em conta:</span>
+                        <span>
+                          R${" "}
+                          {stats.balanceRecebido.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setBalanceType("futuro")}
+                        className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                          balanceType === "futuro"
+                            ? "bg-sky-500/10 dark:bg-sky-500/20 font-bold text-sky-800 dark:text-sky-300"
+                            : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
+                        <span>Futuro:</span>
+                        <span>
+                          R${" "}
+                          {stats.balanceFuturo.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setBalanceType("pendente")}
+                        className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                          balanceType === "pendente"
+                            ? "bg-amber-500/10 dark:bg-amber-500/20 font-bold text-amber-800 dark:text-amber-300"
+                            : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
+                        <span>Pendente:</span>
+                        <span>
+                          R${" "}
+                          {stats.balancePendente.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setBalanceType("gasto")}
+                        className={`w-full flex items-center justify-between font-semibold p-1 rounded-md transition-colors ${
+                          balanceType === "gasto"
+                            ? "bg-rose-500/10 dark:bg-rose-500/20 font-bold text-rose-800 dark:text-rose-300"
+                            : "hover:bg-black/5 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400"
+                        }`}
+                      >
+                        <span>Total gasto:</span>
+                        <span>
+                          R${" "}
+                          {stats.totalOut.toLocaleString("pt-BR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* Authentication Panel */}
           {authLoading ? (
             <div className="py-2 text-center text-xs text-slate-400">
-              Carregando perfil...
+              {isSidebarCollapsed ? (
+                <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              ) : (
+                "Carregando perfil..."
+              )}
             </div>
           ) : user ? (
-            <button
-              onClick={() => setIsUserModalOpen(true)}
-              className="w-full text-left flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer group"
-            >
-              <div className="flex items-center gap-3">
-                {user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt={user.displayName || "Avatar"}
-                    className="w-8 h-8 rounded-full border border-emerald-500/30 shrink-0 group-hover:scale-110 transition-transform"
-                    referrerPolicy="no-referrer"
-                    id="user-avatar"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shrink-0 group-hover:scale-110 transition-transform">
-                    {user.displayName
-                      ? user.displayName.charAt(0).toUpperCase()
-                      : "U"}
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold truncate dark:text-slate-100 group-hover:text-emerald-600 transition-colors">
-                    {user.displayName || "Usuário"}
-                  </p>
-                  <p className="text-[10px] text-slate-400 truncate">
-                    {user.email}
-                  </p>
+            isSidebarCollapsed ? (
+              <div className="relative group flex justify-center w-full">
+                <button
+                  onClick={() => setIsUserModalOpen(true)}
+                  className="p-1 rounded-full hover:ring-2 hover:ring-emerald-500 transition-all cursor-pointer"
+                  title={user.displayName || user.email || "Perfil"}
+                  id="collapsed-user-avatar"
+                >
+                  {user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt={user.displayName || "Avatar"}
+                      className="w-8 h-8 rounded-full border border-emerald-500/30 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                      {user.displayName
+                        ? user.displayName.charAt(0).toUpperCase()
+                        : "U"}
+                    </div>
+                  )}
+                </button>
+                <div className="absolute left-full ml-3 bottom-0 px-3 py-2 bg-slate-900 dark:bg-slate-800 text-white rounded-xl shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                  <p className="text-xs font-bold">{user.displayName || "Usuário"}</p>
+                  <p className="text-[10px] text-slate-400">{user.email}</p>
                 </div>
               </div>
-            </button>
+            ) : (
+              <button
+                onClick={() => setIsUserModalOpen(true)}
+                className="w-full text-left flex flex-col gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer group"
+                id="sidebar-user-card"
+              >
+                <div className="flex items-center gap-3">
+                  {user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt={user.displayName || "Avatar"}
+                      className="w-8 h-8 rounded-full border border-emerald-500/30 shrink-0 group-hover:scale-110 transition-transform"
+                      referrerPolicy="no-referrer"
+                      id="user-avatar"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold text-xs shrink-0 group-hover:scale-110 transition-transform">
+                      {user.displayName
+                        ? user.displayName.charAt(0).toUpperCase()
+                        : "U"}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold truncate dark:text-slate-100 group-hover:text-emerald-600 transition-colors">
+                      {user.displayName || "Usuário"}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {user.email}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )
+          ) : isSidebarCollapsed ? (
+            <div className="relative group flex justify-center w-full">
+              <button
+                onClick={handleLogin}
+                className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-md shadow-emerald-200 dark:shadow-none cursor-pointer"
+                title="Entrar com Google"
+                id="collapsed-login-btn"
+              >
+                <LogIn size={18} />
+              </button>
+              <div className="absolute left-full ml-3 bottom-0 px-2.5 py-1.5 bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                Entrar com Google
+              </div>
+            </div>
           ) : (
             <div className="p-3 bg-emerald-50/30 dark:bg-slate-800/30 rounded-2xl border border-dashed border-emerald-500/20 dark:border-slate-700/50 flex flex-col gap-2">
               <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">
